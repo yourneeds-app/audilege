@@ -1,0 +1,22 @@
+name: Import verified Audilege snapshot
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  import:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import reviewed source files
+        run: |
+          set -euo pipefail
+          echo 'ace67aba11cb50aaf6003a658f265ad6fa2c56c173218532a5ebefdf201a9c70  audilege-source.zip' | sha256sum --check
+          unzip -q audilege-source.zip
+          git rm audilege-source.zip
+          git add .gitignore README.md RELEASING.md settings.gradle gradle.properties app
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Import verified Audilege 0.2.0 source'
+          git push origin HEAD:main
