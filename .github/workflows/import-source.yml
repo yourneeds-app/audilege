@@ -12,11 +12,11 @@ jobs:
       - name: Import reviewed source files
         run: |
           set -euo pipefail
-          echo 'ace67aba11cb50aaf6003a658f265ad6fa2c56c173218532a5ebefdf201a9c70  audilege-source.zip' | sha256sum --check
-          unzip -q audilege-source.zip
+          echo 'bfdc450f585c5d4458ab8f99782bdf5c813c36980605e4274b476bfa7fa8ff38  audilege-source.zip' | sha256sum --check
+          unzip -oq audilege-source.zip
           git rm audilege-source.zip
           git add .gitignore README.md RELEASING.md settings.gradle gradle.properties app
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Import verified Audilege 0.2.0 source'
+          git commit -m 'Keep read-aloud tracks continuous between word cues'
           git push origin HEAD:main
