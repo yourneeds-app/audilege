@@ -12,11 +12,11 @@ jobs:
       - name: Import reviewed source files
         run: |
           set -euo pipefail
-          echo '28466ece2411dc413b5c141368a8428e2deb5d2897b5d8ecb16286eeb6faeb9c audilege-source.zip' | sha256sum --check
+          echo 'ad7492288a826a230498ad8a7947c94afe26c465d76cc290e8c49556313e490c audilege-source.zip' | sha256sum --check
           unzip -oq audilege-source.zip
           git rm audilege-source.zip
           git add .gitignore README.md RELEASING.md settings.gradle gradle.properties app
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Refine Android controls and update checks in Audilege 0.3.1'
+          git commit -m 'Polish reader controls and word highlighting in Audilege 0.3.2'
           git push origin HEAD:main
