@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Color
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.media.PlaybackParams
 import android.net.Uri
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -152,19 +153,20 @@ internal class ReaderPage(
 }
 
 internal class Narration(
-    private val chapterCues: List<Cue>,
+    chapterCues: List<Cue>,
     startIndex: Int,
     private val mark: (String?) -> Unit,
     private val error: (String) -> Unit,
 ) {
     private var player: MediaPlayer? = null
-    var index = startIndex.coerceIn(chapterCues.indices)
-        private set
+    private val timeline = CueTimeline(chapterCues, startIndex)
+    val index get() = timeline.index
     private var handlingEnd = false
     private var seeking = false
     var finished = false
         private set
-    val audio: String get() = chapterCues[index].audio
+    private var lastMark: String? = null
+    val audio: String get() = timeline.cue.audio
 
     fun attach(file: File, tempo: Float, playing: Boolean) {
         releasePlayer()
@@ -173,7 +175,7 @@ internal class Narration(
         try {
             current.setAudioAttributes(AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-            current.setDataSource(file.absolutePath)
+            file.inputStream().use { current.setDataSource(it.fd) }
             current.setOnErrorListener { _, _, _ ->
                 error("Die eingebettete Tonspur konnte nicht abgespielt werden.")
                 true
@@ -181,29 +183,30 @@ internal class Narration(
             current.setOnCompletionListener { handlingEnd = true }
             current.setOnSeekCompleteListener { seeking = false }
             current.prepare()
-            startAt(index, tempo, playing)
+            startAt(tempo, playing)
         } catch (exception: Exception) {
             releasePlayer()
             throw exception
         }
     }
 
-    private fun startAt(target: Int, tempo: Float, playing: Boolean) {
+    private fun startAt(tempo: Float, playing: Boolean) {
         val current = player ?: return
-        seeking = true
-        current.seekTo(chapterCues[target].start.toLong(), MediaPlayer.SEEK_CLOSEST)
+        val start = timeline.cue.start
+        seeking = current.currentPosition != start
+        if (seeking) current.seekTo(start.toLong(), MediaPlayer.SEEK_CLOSEST)
         if (playing) {
-            current.playbackParams = current.playbackParams.setSpeed(tempo)
+            current.playbackParams = PlaybackParams().allowDefaults().setSpeed(tempo)
             current.start()
         }
-        mark(chapterCues[target].fragment)
+        updateMarker(null)
     }
 
     fun pause() { player?.takeIf { it.isPlaying }?.pause() }
 
     fun play(tempo: Float) {
         player?.let {
-            it.playbackParams = it.playbackParams.setSpeed(tempo)
+            it.playbackParams = PlaybackParams().allowDefaults().setSpeed(tempo)
             it.start()
         }
     }
@@ -211,31 +214,32 @@ internal class Narration(
     fun tick(tempo: Float): Boolean {
         val current = player ?: return false
         if (seeking) return false
-        val position = current.currentPosition
-        var changed = false
-        while (position >= chapterCues[index].end || handlingEnd) {
-            handlingEnd = false
-            val previous = chapterCues[index]
-            if (index + 1 == chapterCues.size) {
+        val ended = handlingEnd
+        handlingEnd = false
+        val position = current.timestamp?.anchorMediaTimeUs?.takeIf { it >= 0 }
+            ?.let { (it / 1000).coerceAtMost(Int.MAX_VALUE.toLong()).toInt() } ?: current.currentPosition
+        when (timeline.advance(position, ended)) {
+            CueAdvance.FINISHED -> {
                 finished = true
+                updateMarker(null)
                 pause()
-                return false
             }
-            index++
-            val next = chapterCues[index]
-            if (next.audio != previous.audio) {
+            CueAdvance.NEXT_TRACK -> {
+                updateMarker(null)
                 releasePlayer()
                 return true
             }
-            if (next.start < previous.start || next.start - previous.end > 100 ||
-                position < next.start - 100) {
-                startAt(index, tempo, true)
-                return false
-            }
-            changed = true
+            CueAdvance.SEEK -> startAt(tempo, true)
+            CueAdvance.CONTINUE -> updateMarker(timeline.fragmentAt(position))
         }
-        if (changed) mark(chapterCues[index].fragment)
         return false
+    }
+
+    private fun updateMarker(fragment: String?) {
+        if (lastMark != fragment) {
+            lastMark = fragment
+            mark(fragment)
+        }
     }
 
     private fun releasePlayer() {
