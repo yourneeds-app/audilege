@@ -150,7 +150,7 @@ internal fun BookReader(activity: MainActivity, file: File, book: Publication, c
             audioError = false
             if (engine == narration) narration.play(speed) else attach()
             while (true) {
-                delay(24)
+                delay(16)
                 if (narration.tick(speed)) {
                     engine = null
                     attach()

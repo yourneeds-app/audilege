@@ -36,3 +36,5 @@ gradle testDebugUnitTest assembleDebug lintDebug
 Stand 17. November 2026: Debug-APK 0.1.0 gebaut und Signatur geprüft. Android-Lint meldet 0 Fehler und 19 Warnungen. Vier Parser-Tests liefen direkt mit JUnit, weil die Sandbox die Loopback-Verbindung des Gradle-Testprozesses sperrt. Der Parser liest 58.199 Zeitmarken aus Krummer Hund und 306.375 aus der Panem-Gesamtausgabe. Wiedergabe und Oberfläche auf einem Android-Gerät sowie Anmeldung und Download an einem realen OPDS-Server stehen aus.
 
 Audilege 0.2.0 (Build 3): APK, acht Unit-Tests und Android-Lint geprüft. Die APK nutzt dieselbe Paket-ID und Signatur wie FolioCue 0.1.1. Der vollständige Test mit einem echten BookOrbit-Konto auf Android steht aus.
+
+Audilege 0.2.1 (Build 4): Zwischen vorwärts laufenden Zeitmarken derselben Tonspur läuft die Wiedergabe ohne Sprung weiter. Die Hervorhebung richtet sich nach der Android-Wiedergabezeit und bleibt in einer Lücke zwischen Wortmarken leer.
