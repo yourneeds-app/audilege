@@ -10,6 +10,23 @@ import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
 
+private fun archiveEntry(file: File, path: String): InputStream? {
+    val zip = ZipFile(file)
+    try {
+        val entry = zip.getEntry(path)
+        if (entry != null) return object : java.io.FilterInputStream(zip.getInputStream(entry)) {
+            override fun close() {
+                try { super.close() } finally { zip.close() }
+            }
+        }
+    } catch (failure: Exception) {
+        zip.close()
+        throw failure
+    }
+    zip.close()
+    return null
+}
+
 internal fun xml(input: InputStream): Element {
     val bytes = input.use { stream ->
         val result = ByteArrayOutputStream()
@@ -73,60 +90,63 @@ internal fun clock(value: String): Int? {
         ?.let { kotlin.math.round(it).toInt() }
 }
 
-internal class Publication(file: File) {
+internal data class AudioStream(val url: URI, val headers: Map<String, String>)
+
+internal class Publication(
+    fallbackTitle: String,
+    private val resourceStream: (String) -> InputStream?,
+    val audioStream: ((String) -> AudioStream)? = null,
+) {
+    constructor(file: File) : this(file.nameWithoutExtension, { path -> archiveEntry(file, path) })
+    val cover: String?
+    val author: String
+    val description: String
+    val packageSpineStep: Int
     private val manifest: Map<String, Item>
     val title: String
     val spine: List<Item>
     val contents: List<Section>
     val mime: Map<String, String>
-    private val archive = file
-
     init {
-        ZipFile(file).use { zip ->
-            val container = xml(zip.getInputStream(zip.getEntry("META-INF/container.xml")
-                ?: error("Kein EPUB-Container.")))
-            val packagePath = container.descendants("rootfile").first().getAttribute("full-path")
-            val opf = xml(zip.getInputStream(zip.getEntry(packagePath) ?: error("EPUB-Paket fehlt.")))
-            title = opf.descendants("title").firstOrNull()?.textContent?.trim().orEmpty().ifBlank { file.nameWithoutExtension }
-            val entries = opf.children("manifest").single().children("item")
-            manifest = entries.mapNotNull { element ->
-                resource(packagePath, element.getAttribute("href"))?.let {
-                    element.getAttribute("id") to Item(it.path.removePrefix("/"),
-                        element.getAttribute("media-type"), element.getAttribute("media-overlay"))
-                }
-            }.toMap()
-            mime = manifest.values.associate { it.path to it.type }
-            spine = opf.children("spine").single().children("itemref")
-                .mapNotNull { manifest[it.getAttribute("idref")] }
-            require(spine.isNotEmpty()) { "Das EPUB enthält keine lesbaren Kapitel." }
-            val nav = entries.firstOrNull { "nav" in it.getAttribute("properties").split(Regex("\\s+")) }
-                ?.let { manifest[it.getAttribute("id")] }
-            contents = nav?.let { item ->
-                runCatching {
-                    xml(zip.getInputStream(zip.getEntry(item.path))).descendants("nav")
-                        .firstOrNull { it.getAttributeNS("http://www.idpf.org/2007/ops", "type") == "toc" }
-                        ?.descendants("a")?.mapNotNull { anchor ->
-                            resource(item.path, anchor.getAttribute("href"))?.let { uri ->
-                                Section(uri.path.removePrefix("/"), anchor.textContent.trim(), uri.fragment)
-                            }
-                        }?.filter { section -> spine.any { it.path == section.path } }
-                }.getOrNull()
-            }.orEmpty().ifEmpty { spine.map { item -> Section(item.path, "") } }
-        }
+        val container = xml(resourceStream("META-INF/container.xml") ?: error("EPUB container"))
+        val packagePath = container.descendants("rootfile").first().getAttribute("full-path")
+        val opf = xml(resourceStream(packagePath) ?: error("EPUB package"))
+        title = opf.descendants("title").firstOrNull()?.textContent?.trim().orEmpty().ifBlank { fallbackTitle }
+        author = opf.descendants("creator").joinToString(", ") { it.textContent.trim() }
+        description = opf.descendants("description").firstOrNull()?.textContent?.trim().orEmpty()
+        val entries = opf.children("manifest").single().children("item")
+        manifest = entries.mapNotNull { element ->
+            resource(packagePath, element.getAttribute("href"))?.let {
+                element.getAttribute("id") to Item(it.path.removePrefix("/"),
+                    element.getAttribute("media-type"), element.getAttribute("media-overlay"))
+            }
+        }.toMap()
+        mime = manifest.values.associate { it.path to it.type }
+        val spineElement = opf.children("spine").single()
+        packageSpineStep = (0 until opf.childNodes.length).map { opf.childNodes.item(it) }
+            .filterIsInstance<Element>().indexOf(spineElement).let { (it + 1) * 2 }
+        val coverId = opf.descendants("meta").firstOrNull { it.getAttribute("name") == "cover" }
+            ?.getAttribute("content")
+        cover = (entries.firstOrNull { "cover-image" in it.getAttribute("properties").split(' ') }
+            ?.getAttribute("id") ?: coverId)?.let { manifest[it]?.path }
+        spine = spineElement.children("itemref").map { manifest[it.getAttribute("idref")] ?: error("EPUB spine reference") }
+        require(spine.isNotEmpty()) { "Das EPUB enthält keine lesbaren Kapitel." }
+        val nav = entries.firstOrNull { "nav" in it.getAttribute("properties").split(Regex("\\s+")) }
+            ?.let { manifest[it.getAttribute("id")] }
+        contents = nav?.let { item ->
+            runCatching {
+                xml(resourceStream(item.path) ?: error("EPUB navigation")).descendants("nav")
+                    .firstOrNull { it.getAttributeNS("http://www.idpf.org/2007/ops", "type") == "toc" }
+                    ?.descendants("a")?.mapNotNull { anchor ->
+                        resource(item.path, anchor.getAttribute("href"))?.let { uri ->
+                            Section(uri.path.removePrefix("/"), anchor.textContent.trim(), uri.fragment)
+                        }
+                    }?.filter { section -> spine.any { it.path == section.path } }
+            }.getOrNull()
+        }.orEmpty().ifEmpty { spine.map { item -> Section(item.path, "") } }
     }
 
-    fun open(path: String): InputStream? {
-        if (path !in mime) return null
-        val zip = ZipFile(archive)
-        val entry = zip.getEntry(path)
-        if (entry == null) {
-            zip.close()
-            return null
-        }
-        return object : java.io.FilterInputStream(zip.getInputStream(entry)) {
-            override fun close() { try { super.close() } finally { zip.close() } }
-        }
-    }
+    fun open(path: String): InputStream? = if (path in mime) resourceStream(path) else null
 
     fun cues(chapter: Item): List<Cue> {
         val overlay = manifest[chapter.overlay] ?: return emptyList()

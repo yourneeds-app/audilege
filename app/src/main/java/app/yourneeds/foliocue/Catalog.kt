@@ -46,7 +46,7 @@ private fun localHost(host: String): Boolean {
             (bytes[0] == 172 && bytes[1] in 16..31)))
 }
 
-internal data class CatalogEntry(val title: String, val url: URI, val book: Boolean)
+internal data class CatalogEntry(val title: String, val url: URI, val book: Boolean, val author: String = "")
 internal data class CatalogPage(val entries: List<CatalogEntry>, val next: URI?)
 internal class CatalogAccessException(val messageId: Int) : IllegalStateException()
 internal interface LibraryCatalog {
@@ -147,8 +147,19 @@ internal class Profiles(context: Context) {
         return Base64.encodeToString(cipher.iv + cipher.doFinal(credential.toByteArray()), Base64.NO_WRAP)
     }
 
-    fun credential(profile: Profile): String {
-        val value = Base64.decode(prefs.getString(profile.id, null) ?: error("Der Zugang fehlt."), Base64.NO_WRAP)
+    fun updateToken(): String = prefs.getString("github-release-token", null)?.let(::decrypt).orEmpty()
+
+    fun saveUpdateToken(token: String) {
+        val editor = prefs.edit()
+        if (token.isBlank()) editor.remove("github-release-token")
+        else editor.putString("github-release-token", encrypt(token))
+        check(editor.commit())
+    }
+
+    fun credential(profile: Profile): String = decrypt(prefs.getString(profile.id, null) ?: error("Der Zugang fehlt."))
+
+    private fun decrypt(encoded: String): String {
+        val value = Base64.decode(encoded, Base64.NO_WRAP)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
             init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, value.copyOfRange(0, 12)))
         }

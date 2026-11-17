@@ -10,7 +10,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -24,32 +23,48 @@ import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.json.JSONObject
 import kotlinx.coroutines.withContext
 
-private enum class Mode(val label: Int) {
+internal enum class Mode(val label: Int) {
     Follow(R.string.follow), Listen(R.string.listen), Read(R.string.read),
 }
-private enum class Paper(val label: Int, val bg: Long, val ink: Long) {
+internal enum class Paper(val label: Int, val bg: Long, val ink: Long) {
     Day(R.string.day, 0xFFFAFBFD, 0xFF172C3D),
     Cream(R.string.cream, 0xFFF5ECD8, 0xFF302719),
     Night(R.string.night, 0xFF172330, 0xFFE8EEF5),
 }
-private enum class Typeface(val label: Int, val css: String) {
+internal enum class Typeface(val label: Int, val css: String) {
     Original(R.string.original, ""), Serif(R.string.serif, "serif"),
     Sans(R.string.sans, "sans-serif"), Mono(R.string.mono, "monospace"),
 }
 
-private data class Location(val index: Int, val anchor: String? = null, val revision: Int = 0)
+private data class Location(val index: Int, val anchor: String? = null, val revision: Int = 0, val cfi: String? = null)
 
 @Composable
-internal fun BookReader(activity: MainActivity, file: File, book: Publication, close: () -> Unit) {
+internal fun BookReader(
+    activity: MainActivity, file: File, book: Publication, initialMode: Mode?,
+    accent: Accent, online: OnlineBook?, serverProgress: JSONObject?,
+    ownerScope: kotlinx.coroutines.CoroutineScope, close: () -> Unit,
+) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("reader", Context.MODE_PRIVATE) }
     val bookKey = keyOf(file.absolutePath)
-    var location by remember { mutableStateOf(Location(prefs.getInt("$bookKey.chapter", 0).coerceIn(book.spine.indices))) }
+    val sync = remember { online?.let { ReadingSync(it, serverProgress, prefs, bookKey) } }
+    val initialPlace = remember {
+        val place = sync?.pending ?: serverProgress
+        place?.place(book, initialMode)
+    }
+    var location by remember {
+        mutableStateOf(Location(
+            initialPlace?.chapter ?: prefs.getInt("$bookKey.chapter", 0).coerceIn(book.spine.indices),
+            initialPlace?.anchor, cfi = initialPlace?.cfi,
+        ))
+    }
     val chapter = book.spine[location.index]
     var mode by remember {
-        mutableStateOf(if (book.spine.any { it.overlay.isNotBlank() }) {
+        mutableStateOf(initialMode ?: if (book.spine.any { it.overlay.isNotBlank() }) {
             Mode.entries.getOrElse(prefs.getInt("$bookKey.mode", 0)) { Mode.Follow }
         } else Mode.Read)
     }
@@ -57,15 +72,46 @@ internal fun BookReader(activity: MainActivity, file: File, book: Publication, c
     var font by remember { mutableStateOf(Typeface.entries.getOrElse(prefs.getInt("font", 0)) { Typeface.Original }) }
     var size by remember { mutableIntStateOf(prefs.getInt("size", 100).coerceIn(75, 200)) }
     var speed by remember { mutableFloatStateOf(prefs.getFloat("speed", 1f).coerceIn(0.75f, 2f)) }
-    var controls by remember { mutableStateOf(true) }
+    var controls by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<Int?>(null) }
     var playing by remember { mutableStateOf(false) }
-    var wantsPlay by remember { mutableStateOf(false) }
+    var wantsPlay by remember { mutableStateOf(initialMode != null && initialMode != Mode.Read) }
+    val scope = rememberCoroutineScope()
+    var syncState by remember { mutableStateOf(
+        if (sync == null) null else if (sync.pending != null || serverProgress == null) SyncState.Pending else SyncState.Synced,
+    ) }
+    var syncing by remember { mutableStateOf(false) }
+    var movement by remember(location) { mutableIntStateOf(0) }
+    var lastAnchor by remember(location) { mutableStateOf<String?>(location.anchor) }
+    var chapterFailed by remember(location) { mutableStateOf(false) }
     var scroll by remember(location) { mutableIntStateOf(prefs.getInt("$bookKey.scroll.${location.index}", 0)) }
     var view by remember { mutableStateOf<ReaderPage?>(null) }
     var fragment by remember(location) { mutableStateOf<String?>(null) }
     var audioError by remember(location) { mutableStateOf(false) }
-    BackHandler(enabled = !controls && mode != Mode.Listen) { controls = true }
+
+
+    suspend fun syncPending(force: Boolean = false) {
+        val bridge = sync ?: return
+        val candidate = bridge.pending ?: return
+        if (syncing || (!force && syncState == SyncState.Conflict)) return
+        syncing = true
+        try {
+            val result = withContext(Dispatchers.IO) { bridge.exchange(candidate, force) }
+            bridge.accept(result, candidate)
+            syncState = if (result.state == SyncState.Conflict) result.state
+                else if (bridge.pending == null) SyncState.Synced else SyncState.Pending
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (failure: Exception) {
+            syncState = SyncState.Pending
+        } finally { syncing = false }
+    }
+
+    fun stage(candidate: JSONObject?) {
+        if (candidate == null || sync == null || sync.pending?.toString() == candidate.toString()) return
+        sync.remember(candidate)
+        if (syncState != SyncState.Conflict) syncState = SyncState.Pending
+    }
 
     fun go(index: Int, anchor: String? = null, continuePlaying: Boolean = false) {
         if (index !in book.spine.indices) return
@@ -76,19 +122,42 @@ internal fun BookReader(activity: MainActivity, file: File, book: Publication, c
         wantsPlay = continuePlaying
         playing = false
         location = Location(index, anchor, location.revision + 1)
+
         prefs.edit().putInt("$bookKey.chapter", index).apply()
+    }
+
+    BackHandler {
+        if (!controls && mode != Mode.Listen) controls = true
+        else {
+            ownerScope.launch { syncPending() }
+            close()
+        }
+    }
+
+    LaunchedEffect(activity, controls, mode) {
+        val bars = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+        if (controls || mode == Mode.Listen) bars.show(WindowInsetsCompat.Type.systemBars())
+        else bars.hide(WindowInsetsCompat.Type.systemBars())
+    }
+
+    LaunchedEffect(sync) {
+        if (sync == null) return@LaunchedEffect
+        while (true) {
+            delay(10_000)
+            syncPending()
+        }
     }
 
     DisposableEffect(activity) {
         val window = activity.window
         val bars = WindowCompat.getInsetsController(window, window.decorView)
         bars.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        bars.hide(WindowInsetsCompat.Type.systemBars())
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val lifecycle = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
                 playing = false
                 wantsPlay = false
+                scope.launch { syncPending() }
             }
         }
         activity.lifecycle.addObserver(lifecycle)
@@ -108,8 +177,13 @@ internal fun BookReader(activity: MainActivity, file: File, book: Publication, c
     val chapterCues = cues.orEmpty()
     val narration = remember(location, chapterCues) {
         chapterCues.takeIf { it.isNotEmpty() }?.let { marks ->
-            Narration(marks, prefs.getInt("$bookKey.cue.${location.index}", 0),
-                { fragment = it }, { audioError = true; playing = false })
+            val anchoredCue = location.anchor?.let { anchor -> marks.indexOfFirst { it.fragment == anchor } }
+            val startCue = anchoredCue?.takeIf { it >= 0 }
+                ?: prefs.getInt("$bookKey.cue.${location.index}", 0)
+            Narration(marks, startCue, {
+                fragment = it
+                if (it != null) lastAnchor = it
+            }, { audioError = true; playing = false })
         }
     }
     var engine by remember(narration) { mutableStateOf<Narration?>(null) }
@@ -133,17 +207,22 @@ internal fun BookReader(activity: MainActivity, file: File, book: Publication, c
             suspend fun attach() {
                 loadingAudio = true
                 val audio = narration.audio
-                val extracted = withContext(Dispatchers.IO) {
-                    val part = File.createTempFile("folio-audio-", ".part", context.cacheDir)
-                    try {
-                        val input = book.open(audio) ?: error("Audio")
-                        input.use { stream -> part.outputStream().use { stream.copyTo(it) } }
-                        java.nio.file.Files.move(part.toPath(), audioFile.toPath(),
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-                        audioFile
-                    } finally { part.delete() }
+                val stream = book.audioStream?.let { source -> withContext(Dispatchers.IO) { source(audio) } }
+                if (stream != null) {
+                    narration.attach(context, stream, speed)
+                } else {
+                    val extracted = withContext(Dispatchers.IO) {
+                        val part = File.createTempFile("folio-audio-", ".part", context.cacheDir)
+                        try {
+                            val input = book.open(audio) ?: error("Audio")
+                            input.use { stream -> part.outputStream().use { stream.copyTo(it) } }
+                            java.nio.file.Files.move(part.toPath(), audioFile.toPath(),
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                            audioFile
+                        } finally { part.delete() }
+                    }
+                    narration.attach(extracted, speed)
                 }
-                narration.attach(extracted, speed, true)
                 engine = narration
                 loadingAudio = false
             }
@@ -177,12 +256,36 @@ internal fun BookReader(activity: MainActivity, file: File, book: Publication, c
     LaunchedEffect(view, fragment, mode) {
         view?.highlight(if (mode == Mode.Follow) fragment else null)
     }
-    LaunchedEffect(view, paper, font, size) { view?.appearance(paper.bg, paper.ink, font.css, size) }
+    LaunchedEffect(view, movement, location, mode) {
+        if (mode != Mode.Read || sync == null || view == null ||
+            (movement == 0 && location.revision == 0)) return@LaunchedEffect
+        val chapterIndex = location.index
+        delay(650)
+        view?.capturePosition(null) { cfi, fraction ->
+            if (location.index == chapterIndex && mode == Mode.Read)
+                stage(book.progressPayload(chapterIndex, cfi, null, fraction, false))
+        }
+    }
 
-    val colors = if (paper == Paper.Night) darkColorScheme(
-        primary = Color(0xFFAAD9F3), onPrimary = Color(0xFF123B56),
-        surface = Color(0xFF172330), onSurface = Color(0xFFE8EEF5),
-    ) else MaterialTheme.colorScheme
+    LaunchedEffect(narration, playing, mode, sync) {
+        if (sync == null || narration == null || mode == Mode.Read || !playing) return@LaunchedEffect
+        while (true) {
+            delay(3500)
+            val anchor = lastAnchor ?: continue
+            val index = narration.index
+            val fraction = index.toDouble() / chapterCues.size
+            val chapterIndex = location.index
+            stage(book.progressPayload(chapterIndex, null, anchor, fraction, true))
+            if (mode == Mode.Follow) view?.capturePosition(anchor) { cfi, _ ->
+                if (location.index == chapterIndex && mode == Mode.Follow && cfi != null)
+                    stage(book.progressPayload(chapterIndex, cfi, anchor, fraction, true))
+            }
+        }
+    }
+
+    LaunchedEffect(view, paper, font, size) { view?.appearance(paper.bg, paper.ink, font.css, size, accent.highlight) }
+
+    val colors = appearanceColors(paper, accent)
     MaterialTheme(colorScheme = colors) {
     FolioDrawer(book.title, listOf(
         MenuItem(R.string.contents) { dialog = R.string.contents },
@@ -196,10 +299,13 @@ internal fun BookReader(activity: MainActivity, file: File, book: Publication, c
             }
             controls = false
         },
-        MenuItem(R.string.shelf, action = close),
+        MenuItem(R.string.shelf) {
+            ownerScope.launch { syncPending() }
+            close()
+        },
     )) { menu ->
-    Surface(color = Color(paper.bg), contentColor = Color(paper.ink), modifier = Modifier.fillMaxSize()) {
-        Column {
+    Surface(color = colors.background, contentColor = colors.onBackground, modifier = Modifier.fillMaxSize()) {
+        Column(Modifier.then(if (controls || mode == Mode.Listen) Modifier.safeDrawingPadding() else Modifier)) {
             if (controls || mode == Mode.Listen) {
                 FolioBar(book.title, menu)
                 if (book.spine.any { it.overlay.isNotBlank() }) {
@@ -231,16 +337,18 @@ internal fun BookReader(activity: MainActivity, file: File, book: Publication, c
                     AndroidView(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                         factory = { ctx ->
-                            ReaderPage(ctx, book, chapter, location.anchor, scroll, chapterLink = { path, anchor ->
+                            ReaderPage(ctx, book, chapter, location.anchor, scroll, location.cfi, chapterLink = { path, anchor ->
                                 val target = book.spine.indexOfFirst { it.path == path }
                                 if (target >= 0) go(target, anchor)
                             }, position = { y ->
                                 scroll = y
+                                if (mode == Mode.Read) movement++
                                 prefs.edit().putInt("$bookKey.scroll.${location.index}", y).apply()
                             })
                                 .also { page ->
                                     view = page
                                     page.onPageTap = { controls = !controls }
+                                    page.onPageError = { chapterFailed = true; controls = true }
                                 }
                         },
                         onRelease = { page ->
@@ -253,6 +361,27 @@ internal fun BookReader(activity: MainActivity, file: File, book: Publication, c
                 }
             }
             if (controls || mode == Mode.Listen) {
+                syncState?.let { state ->
+                    Text(stringResource(state.label), Modifier.padding(horizontal = 16.dp),
+                        style = MaterialTheme.typography.labelMedium)
+                    if (state == SyncState.Conflict) Row(Modifier.padding(horizontal = 8.dp)) {
+                        TextButton(enabled = !syncing, onClick = {
+                            val place = sync?.remote?.place(book, mode)
+                            sync?.discardLocal()
+                            syncState = SyncState.Synced
+                            playing = false
+                            wantsPlay = false
+                            location = Location(place?.chapter ?: 0, place?.anchor, location.revision + 1, place?.cfi)
+                            prefs.edit().putInt("$bookKey.chapter", location.index).apply()
+                        }) { Text(stringResource(R.string.sync_remote)) }
+                        TextButton(enabled = !syncing, onClick = { scope.launch { syncPending(true) } }) {
+                            Text(stringResource(R.string.sync_local))
+                        }
+                    }
+                }
+                if (chapterFailed) TextButton(onClick = {
+                    go(location.index, continuePlaying = playing)
+                }) { Text(stringResource(R.string.stream_retry)) }
                 if (audioError) Text(stringResource(R.string.audio_error), Modifier.padding(horizontal = 16.dp))
                 else if (mode != Mode.Read && cues?.isEmpty() == true) {
                     Text(stringResource(R.string.no_audio), Modifier.padding(horizontal = 16.dp))
@@ -268,7 +397,10 @@ internal fun BookReader(activity: MainActivity, file: File, book: Publication, c
                     if (mode != Mode.Read) {
                         Button(enabled = narration != null && !loadingAudio, onClick = {
                             if (narration?.finished == true) go(location.index, continuePlaying = true)
-                            else playing = !playing
+                            else {
+                                playing = !playing
+                                if (playing && mode == Mode.Follow) controls = false
+                            }
                         }) { Text(stringResource(if (loadingAudio) R.string.connecting else if (playing) R.string.pause else R.string.play)) }
                     } else {
                         Text(stringResource(R.string.section_short, location.index + 1, book.spine.size),
@@ -326,7 +458,7 @@ internal fun BookReader(activity: MainActivity, file: File, book: Publication, c
 }
 
 @Composable
-private fun Choice(label: String, options: List<Int>, selected: Int, select: (Int) -> Unit) {
+internal fun Choice(label: String, options: List<Int>, selected: Int, select: (Int) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         TextButton(onClick = { expanded = true }) { Text("$label · ${stringResource(options[selected])}") }

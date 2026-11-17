@@ -9,18 +9,18 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridScope
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -44,11 +44,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme(colorScheme = lightColorScheme(
-                primary = Color(0xFF195E88), onPrimary = Color.White,
-                background = Color(0xFFE6F4FF), onBackground = Color(0xFF123B56),
-                surface = Color.White, onSurface = Color(0xFF123B56),
-            )) { FolioCue(this) }
+            FolioCue(this)
         }
     }
 }
@@ -56,7 +52,11 @@ class MainActivity : ComponentActivity() {
 internal fun keyOf(value: String): String = MessageDigest.getInstance("SHA-256")
     .digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
 
-private data class OpenBook(val file: File, val publication: Publication)
+internal data class OpenBook(
+    val file: File, val publication: Publication, val mode: Mode? = null, val online: OnlineBook? = null,
+    val serverProgress: org.json.JSONObject? = null,
+)
+internal data class BookDetail(val entry: CatalogEntry, val onlineBook: OnlineBook?, val localFile: File, val publication: Publication?)
 private data class CatalogScreen(val title: String, val url: URI, val page: CatalogPage)
 
 @Composable
@@ -65,6 +65,13 @@ private fun FolioCue(activity: MainActivity) {
     val store = remember { Profiles(context) }
     val scope = rememberCoroutineScope()
     val display = remember { context.getSharedPreferences("display", Context.MODE_PRIVATE) }
+    val readerPrefs = remember { context.getSharedPreferences("reader", Context.MODE_PRIVATE) }
+    var paper by remember { mutableStateOf(readerPrefs.paper()) }
+    var accent by remember { mutableStateOf(Accent.entries.getOrElse(readerPrefs.getInt("accent", 0)) { Accent.Teal }) }
+    var settings by remember { mutableStateOf(false) }
+    var details by remember { mutableStateOf<BookDetail?>(null) }
+    var storageRevision by remember { mutableIntStateOf(0) }
+    val covers = remember { CoverStore() }
     var profiles by remember { mutableStateOf(store.list()) }
     var selected by remember { mutableStateOf(profiles.firstOrNull { it.id == display.getString("profile", null) }) }
     var chooser by remember { mutableStateOf(false) }
@@ -79,7 +86,7 @@ private fun FolioCue(activity: MainActivity) {
 
     val folder = remember(selected) { File(context.filesDir, "books/${selected?.id ?: "local"}") }
     var library by remember(folder) { mutableStateOf(emptyList<OpenBook>()) }
-    LaunchedEffect(folder, opened) {
+    LaunchedEffect(folder, opened, storageRevision) {
         if (opened == null) library = withContext(Dispatchers.IO) {
             folder.listFiles().orEmpty().filter { it.extension == "epub" }
                 .mapNotNull { file -> runCatching { OpenBook(file, Publication(file)) }.getOrNull() }
@@ -106,6 +113,20 @@ private fun FolioCue(activity: MainActivity) {
     fun from(profile: Profile): LibraryCatalog = if (profile.accountLogin) {
         OrbitCatalog(profile, store.credential(profile)) { store.renew(profile, it) }
     } else Catalog(profile, store.credential(profile))
+    val catalog = remember(selected) { selected?.let { runCatching { from(it) }.getOrNull() } }
+
+    fun showDetails(entry: CatalogEntry) {
+        perform(R.string.stream_error) {
+            details = withContext(Dispatchers.IO) {
+                val orbit = catalog as? OrbitCatalog
+                val online = orbit?.let { OnlineBook(it, it.details(entry.url)) }
+                val file = File(folder, keyOf(online?.let { "${entry.url}#${it.detail.fileId}" } ?: entry.url.toString()) + ".epub")
+                BookDetail(entry, online, file, online?.let { it.catalog.publication(it.detail, entry.title) }
+                    ?: file.takeIf(File::isFile)?.let(::Publication))
+            }
+        }
+    }
+
     fun select(profile: Profile?) {
         selected = profile
         display.edit().putString("profile", profile?.id).apply()
@@ -120,7 +141,7 @@ private fun FolioCue(activity: MainActivity) {
         if (history.isNotEmpty()) return@LaunchedEffect
         busy = true
         try {
-            val page = withContext(Dispatchers.IO) { from(profile).page(profile.catalog) }
+            val page = withContext(Dispatchers.IO) { (catalog ?: from(profile)).page(profile.catalog) }
             history = listOf(CatalogScreen(profile.label, profile.catalog, page))
         } catch (exception: CancellationException) {
             throw exception
@@ -142,19 +163,80 @@ private fun FolioCue(activity: MainActivity) {
         }
     }
 
-    BackHandler(enabled = !form && (opened != null || chooser || history.size > 1)) {
+    BackHandler(enabled = !form && !busy && (opened != null || settings || details != null || chooser || history.size > 1)) {
         when {
             opened != null -> opened = null
+            settings -> settings = false
+            details != null -> { details = null; problem = null }
             chooser -> chooser = false
             history.size > 1 -> history = history.dropLast(1)
         }
     }
 
+    MaterialTheme(colorScheme = appearanceColors(paper, accent)) {
     val book = opened
     if (book != null) {
-        LaunchedEffect(book.file) { display.edit().putString("last.${folder.name}", book.file.name).apply() }
-        BookReader(activity, book.file, book.publication) { opened = null }
-        return
+        LaunchedEffect(book.file) {
+            if (book.online == null && details?.onlineBook == null) display.edit()
+                .putString("last.${folder.name}", book.file.name).remove("last.online.${folder.name}").apply()
+            details?.takeIf { it.onlineBook != null }?.let {
+                display.edit().putString("last.online.${folder.name}", it.entry.url.toString())
+                    .putString("last.title.${folder.name}", it.entry.title).apply()
+            }
+        }
+        BookReader(activity, book.file, book.publication, book.mode, accent, book.online, book.serverProgress, scope) {
+            opened = null
+            paper = readerPrefs.paper()
+        }
+        return@MaterialTheme
+    }
+
+    if (settings) {
+        SettingsScreen(readerPrefs, store, paper, accent,
+            { paper = it; readerPrefs.edit().putInt("paper", it.ordinal).apply() },
+            { accent = it; readerPrefs.edit().putInt("accent", it.ordinal).apply() },
+        ) { settings = false }
+        return@MaterialTheme
+    }
+
+    details?.let { detail ->
+        DetailScreen(detail, covers, busy, problem, storageRevision,
+            close = { if (!busy) { details = null; problem = null } },
+            open = { mode, offline ->
+                perform(R.string.book_error) {
+                    opened = withContext(Dispatchers.IO) {
+                        val publication = if (offline) Publication(detail.localFile)
+                            else detail.publication ?: error("Publication")
+                        val online = detail.onlineBook
+                        OpenBook(detail.localFile, publication, mode, online,
+                            if (offline) null else runCatching { online?.progress() }.getOrNull())
+                    }
+                }
+            },
+            download = {
+                perform(R.string.book_error) {
+                    val publication = withContext(Dispatchers.IO) {
+                        val online = detail.onlineBook
+                        if (online != null) online.catalog.download(online.detail, detail.localFile)
+                        else (catalog ?: error("Catalog")).download(detail.entry.url, detail.localFile)
+                        if (online == null) Publication(detail.localFile) else detail.publication
+                    }
+                    details = detail.copy(publication = publication)
+                    storageRevision++
+                }
+            },
+            remove = {
+                perform(R.string.load_error) {
+                    withContext(Dispatchers.IO) { check(detail.localFile.delete() || !detail.localFile.exists()) }
+                    if (detail.onlineBook == null) {
+                        if (detail.entry.url.scheme == "file") details = null
+                        else details = detail.copy(publication = null)
+                    }
+                    storageRevision++
+                }
+            },
+        )
+        return@MaterialTheme
     }
 
     if (form) {
@@ -182,7 +264,7 @@ private fun FolioCue(activity: MainActivity) {
                 form = false
             }
         }
-        return
+        return@MaterialTheme
     }
 
     FolioDrawer(stringResource(R.string.app), listOf(
@@ -192,10 +274,11 @@ private fun FolioCue(activity: MainActivity) {
             if (!busy) importBook.launch(arrayOf("application/epub+zip", "application/octet-stream"))
         },
         MenuItem(R.string.profiles) { if (!busy) chooser = true },
+        MenuItem(R.string.app_settings) { if (!busy) settings = true },
     ), brand = true) { menu ->
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        Column(Modifier.safeDrawingPadding().widthIn(max = 760.dp).padding(horizontal = 18.dp).fillMaxWidth()) {
+        Column(Modifier.safeDrawingPadding().widthIn(max = 1120.dp).padding(horizontal = 18.dp).fillMaxWidth()) {
             FolioBar(stringResource(if (localOnly) R.string.downloads else R.string.shelf), menu) {
                 if (selected == null && !localOnly) {
                     TextButton(enabled = !busy, onClick = { editing = null; problem = null; form = true }) {
@@ -229,36 +312,39 @@ private fun FolioCue(activity: MainActivity) {
                     }) { Text(stringResource(if (message == R.string.session_expired) R.string.use_account else R.string.retry)) }
                 }
             }
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
+            LazyVerticalGrid(GridCells.Adaptive(155.dp), verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
+                val lastOnline = display.getString("last.online.${folder.name}", null)
+                if (lastOnline != null && !localOnly && catalog is OrbitCatalog) fullWidth {
+                    val title = display.getString("last.title.${folder.name}", "").orEmpty()
+                    Button(enabled = !busy, onClick = { showDetails(CatalogEntry(title, URI(lastOnline), true)) }) {
+                        Text(stringResource(R.string.resume_book, title))
+                    }
+                }
                 val last = library.firstOrNull { it.file.name == display.getString("last.${folder.name}", null) }
-                if (last != null && !localOnly) item {
+                if (last != null && lastOnline == null && !localOnly) fullWidth {
                     Button(enabled = !busy, onClick = { opened = last }) {
                         Text(stringResource(R.string.resume_book, last.publication.title))
                     }
                 }
                 items(current?.page?.entries.orEmpty()) { entry ->
-                    ShelfCard(entry.title, !busy) {
-                        val profile = selected ?: return@ShelfCard
-                        perform(if (entry.book) R.string.book_error else R.string.catalog_error) {
-                            if (entry.book) {
-                                opened = withContext(Dispatchers.IO) {
-                                    val file = File(folder, keyOf(entry.url.toString()) + ".epub")
-                                    if (!file.exists()) from(profile).download(entry.url, file)
-                                    OpenBook(file, Publication(file))
-                                }
-                            } else {
-                                val page = withContext(Dispatchers.IO) { from(profile).page(entry.url) }
-                                history = history + CatalogScreen(entry.title, entry.url, page)
-                            }
+                    LibraryTile(entry.title, entry.author, !busy, covers, "${selected?.id}:${entry.url}", load = {
+                        if (entry.book) (catalog as? OrbitCatalog)?.cover(entry.url.path.substringAfterLast('/').toLong())
+                        else null
+                    }) {
+                        if (entry.book) showDetails(entry)
+                        else perform(R.string.catalog_error) {
+                            val page = withContext(Dispatchers.IO) { (catalog ?: error("Catalog")).page(entry.url) }
+                            history = history + CatalogScreen(entry.title, entry.url, page)
                         }
                     }
                 }
                 current?.page?.next?.let { next ->
-                    item {
+                    fullWidth {
                         TextButton(enabled = !busy, onClick = {
                             val profile = selected ?: return@TextButton
                             perform(R.string.catalog_error) {
-                                val page = withContext(Dispatchers.IO) { from(profile).page(next) }
+                                val page = withContext(Dispatchers.IO) { (catalog ?: from(profile)).page(next) }
                                 history = history.dropLast(1) + current.copy(
                                     page = CatalogPage((current.page.entries + page.entries).distinct(), page.next?.takeUnless { it == next }))
                             }
@@ -266,12 +352,20 @@ private fun FolioCue(activity: MainActivity) {
                     }
                 }
                 if (library.isNotEmpty() && selected != null && !localOnly) {
-                    item { Text(stringResource(R.string.local), style = MaterialTheme.typography.titleMedium) }
+                    fullWidth { Text(stringResource(R.string.local), style = MaterialTheme.typography.titleMedium) }
                 }
-                items(library) { item -> ShelfCard(item.publication.title, !busy) { opened = item } }
+                items(library, key = { it.file.name }) { item ->
+                    val publication = item.publication
+                    LibraryTile(publication.title, publication.author, !busy, covers, item.file.absolutePath, {
+                        publication.cover?.let(publication::open)
+                    }) {
+                        details = BookDetail(CatalogEntry(publication.title, item.file.toURI(), true, publication.author),
+                            null, item.file, publication)
+                    }
+                }
                 if (!busy && (problem == null || localOnly) && library.isEmpty() && current?.page?.entries.isNullOrEmpty()
                     && current?.page?.next == null) {
-                    item { Text(stringResource(R.string.empty)) }
+                    fullWidth { Text(stringResource(R.string.empty)) }
                 }
             }
         }
@@ -317,13 +411,9 @@ private fun FolioCue(activity: MainActivity) {
         },
         dismissButton = { TextButton(onClick = { chooser = false }) { Text(stringResource(R.string.close)) } },
     )
+    }
 }
 
-@Composable
-private fun ShelfCard(title: String, enabled: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(12.dp)
-    Surface(onClick = onClick, enabled = enabled, shape = shape, shadowElevation = 2.dp,
-        modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFF386985), shape)) {
-        Text(title, modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium)
-    }
+private fun LazyGridScope.fullWidth(content: @Composable () -> Unit) {
+    item(span = { GridItemSpan(maxLineSpan) }) { content() }
 }

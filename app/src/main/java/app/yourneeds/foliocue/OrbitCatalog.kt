@@ -8,7 +8,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private const val PAGE_SIZE = 60
-private class OrbitHttp(val status: Int) : Exception("BookOrbit HTTP $status")
+internal class OrbitHttp(val status: Int) : Exception("BookOrbit HTTP $status")
+
+internal data class OrbitBook(val id: Long, val fileId: Long, val author: String, val description: String)
+internal data class OnlineBook(val catalog: OrbitCatalog, val detail: OrbitBook) {
+    fun progress() = catalog.progress(detail.fileId)
+    fun updateProgress(body: JSONObject) = catalog.progress(detail.fileId, body)
+}
 
 internal class OrbitCatalog(
     private val profile: Profile,
@@ -31,7 +37,7 @@ internal class OrbitCatalog(
             val files = book.optJSONArray("files")
             if (files != null && preferredEpubFile(files) == null) return@mapNotNull null
             val title = book.optString("title").ifBlank { book.optJSONObject("metadata")?.optString("title").orEmpty() }
-            CatalogEntry(title.ifBlank { "#$id" }, URI("$api/books/$id"), true)
+            CatalogEntry(title.ifBlank { "#$id" }, URI("$api/books/$id"), true, author(book))
         }
         val hasMore = items.length() > 0 && (index + 1L) * PAGE_SIZE < response.optLong("total", 0L)
         CatalogPage(entries, if (hasMore) URI("${profile.catalog}?page=${index + 1}") else null)
@@ -45,6 +51,55 @@ internal class OrbitCatalog(
         request(URI("$api/books/files/$fileId/download"), null, token) { savePublication(it, destination) }
     }
 
+    fun download(book: OrbitBook, destination: File): File = withSession { token ->
+        request(URI("$api/books/files/${book.fileId}/download"), null, token) { savePublication(it, destination) }
+    }
+
+    fun details(url: URI): OrbitBook = withSession { token ->
+        val id = url.path.substringAfterLast('/').toLong()
+        val book = json(URI("$api/books/$id"), null, token)
+        val fileId = preferredEpubFile(book.getJSONArray("files"))
+            ?: throw CatalogAccessException(R.string.no_epub)
+        val meta = book.optJSONObject("metadata") ?: book
+        OrbitBook(id, fileId, author(book), meta.optString("description", ""))
+    }
+
+    fun publication(book: OrbitBook, title: String): Publication = Publication(
+        title,
+        { path -> withSession { token -> openStream(epubResource(book, path, false), token) } },
+        { path ->
+            withSession { token ->
+                val uri = epubResource(book, path, true)
+                // The range probe refreshes the session before Android opens the data source.
+                openStream(uri, token, "bytes=0-0").close()
+                AudioStream(uri, mapOf("Authorization" to "Bearer $token", "android-allow-cross-domain-redirect" to "0"))
+            }
+        },
+    )
+
+    fun cover(id: Long): InputStream = withSession { token ->
+        openStream(URI("$api/books/$id/thumbnail"), token)
+    }
+
+    fun progress(fileId: Long, body: JSONObject? = null): JSONObject = withSession { token ->
+        try {
+            request(URI("$api/books/files/$fileId/progress"), body, token) {
+                val response = it.bufferedReader(Charsets.UTF_8).readText()
+                if (response.isBlank() || response == "null") JSONObject() else JSONObject(response)
+            }
+        } catch (failure: OrbitHttp) {
+            if (body == null && failure.status == 404) JSONObject() else throw failure
+        }
+    }
+
+    private fun epubResource(book: OrbitBook, path: String, audio: Boolean): URI {
+        val endpoint = if (audio) "media-overlay/file" else "file"
+        val escapedPath = if (audio) path else path.replace("%", "%25")
+        val encoded = URI(null, null, "/$escapedPath", null).rawPath.removePrefix("/")
+        return URI("$api/epub/${book.id}/$endpoint/$encoded?fileId=${book.fileId}")
+    }
+
+    @Synchronized
     private fun <T> withSession(operation: (String) -> T): T {
         var tokens = JSONObject(session)
         try {
@@ -87,6 +142,35 @@ internal class OrbitCatalog(
             403 -> CatalogAccessException(if (authentication == R.string.account_auth_error) authentication else R.string.account_permission)
             429 -> CatalogAccessException(R.string.auth_rate_limit)
             else -> OrbitHttp(status)
+        }
+
+        private fun author(book: JSONObject): String {
+            val meta = book.optJSONObject("metadata") ?: book
+            val values = meta.optJSONArray("authors") ?: return meta.optString("author", "")
+            return (0 until values.length()).map { index ->
+                values.optJSONObject(index)?.optString("name") ?: values.optString(index)
+            }.filter(String::isNotBlank).joinToString(", ")
+        }
+
+        private fun openStream(url: URI, token: String, range: String? = null): InputStream {
+            val connection = url.toURL().openConnection() as HttpURLConnection
+            connection.instanceFollowRedirects = false
+            connection.connectTimeout = 10000
+            connection.readTimeout = 30000
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            if (range != null) connection.setRequestProperty("Range", range)
+            try {
+                val status = connection.responseCode
+                if (status !in 200..299) throw OrbitHttp(status)
+                return object : java.io.FilterInputStream(connection.inputStream) {
+                    override fun close() {
+                        try { super.close() } finally { connection.disconnect() }
+                    }
+                }
+            } catch (failure: Exception) {
+                connection.disconnect()
+                throw failure
+            }
         }
 
         private fun json(url: URI, body: JSONObject?, token: String? = null): JSONObject =

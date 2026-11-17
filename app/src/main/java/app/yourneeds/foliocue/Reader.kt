@@ -14,6 +14,9 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import java.io.File
 import java.util.UUID
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import org.json.JSONObject
 
 internal class ReaderPage(
@@ -22,12 +25,15 @@ internal class ReaderPage(
     chapter: Item,
     private val fragment: String?,
     private val previousScroll: Int,
+    private val startingCfi: String?,
     private val chapterLink: (String, String?) -> Unit,
     private val position: (Int) -> Unit,
 ) : WebView(context) {
     private val host = "${UUID.randomUUID()}.$BOOK_HOST"
     private var initialized = false
+    private var touchScrolling = false
     var onPageTap: () -> Unit = {}
+    var onPageError: () -> Unit = {}
     private var css = ""
     private var currentMark: String? = null
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
@@ -73,11 +79,15 @@ internal class ReaderPage(
                 )
             }
 
+            override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+                if (request.isForMainFrame) onPageError()
+            }
+
             override fun onPageFinished(view: WebView, url: String) {
                 applyAppearance()
                 postVisualStateCallback(0, object : VisualStateCallback() {
                     override fun onComplete(requestId: Long) {
-                        if (fragment != null) jump(fragment) else scrollTo(0, previousScroll)
+                        navigateToStart()
                         initialized = true
                         highlight(currentMark)
                     }
@@ -89,11 +99,13 @@ internal class ReaderPage(
 
     @android.annotation.SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) touchScrolling = true
         gestures.onTouchEvent(event)
         return super.onTouchEvent(event)
     }
 
-    fun appearance(background: Long, ink: Long, font: String, zoom: Int) {
+    fun appearance(background: Long, ink: Long, font: String, zoom: Int, highlight: Long) {
+        val mark = "#%06x".format(highlight and 0xFFFFFF)
         setBackgroundColor(background.toInt())
         val foreground = "#%06x".format(ink and 0xFFFFFF)
         val paper = "#%06x".format(background and 0xFFFFFF)
@@ -103,7 +115,7 @@ internal class ReaderPage(
             body { padding: 12px 5vw !important; margin: 0 auto !important; max-width: 50rem; }
             body :is(p,span,div,section,h1,h2,h3,h4,li,blockquote) { color: inherit !important; }
             img { max-width: 100%; height: auto; }
-            .foliocue-current { background: #ffe072 !important; color: #172c3d !important; }
+            .foliocue-current { background: $mark !important; color: #172c3d !important; }
             $face
         """.trimIndent()
         settings.textZoom = zoom
@@ -127,7 +139,92 @@ internal class ReaderPage(
 
     override fun onScrollChanged(left: Int, top: Int, oldLeft: Int, oldTop: Int) {
         super.onScrollChanged(left, top, oldLeft, oldTop)
-        if (initialized) position(top)
+        if (initialized && touchScrolling) position(top)
+    }
+
+    private fun navigateToStart() {
+        if (fragment != null) {
+            jump(fragment)
+        } else if (startingCfi == null) {
+            scrollTo(0, previousScroll)
+        } else {
+            evaluateJavascript("""
+                (() => {
+                    const cfi = ${JSONObject.quote(startingCfi)};
+                    const parts = cfi.replace(/\[(?:\^.|[^\]])*\]/g, '').split(',');
+                    const steps = (parts[0] + (parts[1] || '')).match(/\/\d+(?::\d+)?/g) || [];
+                    let node = document.documentElement;
+                    let offset = 0;
+                    for (const part of steps) {
+                        const [rawStep, at] = part.slice(1).split(':');
+                        const step = Number(rawStep);
+                        offset = Number(at || 0);
+                        if (step % 2 === 0) node = node.children[step / 2 - 1];
+                        else {
+                            let seen = 0;
+                            let found = null;
+                            for (const child of node.childNodes) {
+                                if (child.nodeType === 1) seen++;
+                                if (child.nodeType !== 3 || seen !== (step - 1) / 2) continue;
+                                found = child;
+                                if (offset <= child.length) break;
+                                offset -= child.length;
+                            }
+                            node = found;
+                        }
+                        if (!node) return false;
+                    }
+                    if (node.nodeType === 3) {
+                        const range = document.createRange();
+                        range.setStart(node, Math.min(offset, node.length));
+                        range.collapse(true);
+                        window.scrollBy(0, range.getBoundingClientRect().top - 22);
+                    } else node.scrollIntoView();
+                    return true;
+                })()
+            """.trimIndent()) { found -> if (found != "true") scrollTo(0, previousScroll) }
+        }
+    }
+
+    fun capturePosition(anchor: String?, result: (String?, Double) -> Unit) {
+        if (!initialized) return
+        val marker = anchor?.let(JSONObject::quote) ?: "null"
+        evaluateJavascript("""
+            (() => {
+                const marker = document.getElementById($marker);
+                const content = document.body.getBoundingClientRect();
+                let range;
+                for (let y = 24; !marker && !range && y < Math.min(innerHeight, 132); y += 9) {
+                    const point = document.caretRangeFromPoint?.(Math.max(5, content.left + 24), y);
+                    if (point?.startContainer.nodeType === 3) range = point;
+                }
+                let node = marker || range?.startContainer ||
+                    document.elementFromPoint(Math.max(5, content.left + 30), 25);
+                if (!node || !document.body.contains(node)) return null;
+                const steps = [];
+                while (node !== document.documentElement) {
+                    const parent = node.parentNode;
+                    if (!parent) return null;
+                    let elements = 0;
+                    let offset = range?.startOffset || 0;
+                    let text = 0;
+                    for (const sibling of parent.childNodes) {
+                        if (sibling === node) break;
+                        if (sibling.nodeType === 1) { elements++; text = 0; }
+                        if (sibling.nodeType === 3) text += sibling.length;
+                    }
+                    steps.unshift(node.nodeType === 3 ? '/' + (elements * 2 + 1) + ':' + (text + offset)
+                        : '/' + ((elements + 1) * 2));
+                    node = parent;
+                }
+                const limit = Math.max(1, document.documentElement.scrollHeight);
+                return {cfi: steps.join(''), fraction: (scrollY + 25) / limit};
+            })()
+        """.trimIndent()) { raw ->
+            val parsed = runCatching { JSONObject(raw) }.getOrNull() ?: return@evaluateJavascript
+            val cfi = parsed.optString("cfi").takeIf { it.startsWith("/") && it.length <= 1800 }
+            result(cfi, parsed.optDouble("fraction", 0.0).coerceIn(0.0, 1.0))
+        }
     }
 
     fun jump(id: String) {
@@ -168,22 +265,39 @@ internal class Narration(
     private var lastMark: String? = null
     val audio: String get() = timeline.cue.audio
 
-    fun attach(file: File, tempo: Float, playing: Boolean) {
+    suspend fun attach(file: File, tempo: Float) = attach(tempo) { current ->
+        file.inputStream().use { current.setDataSource(it.fd) }
+    }
+
+    suspend fun attach(context: Context, stream: AudioStream, tempo: Float) = attach(tempo) { current ->
+        current.setDataSource(context, Uri.parse(stream.url.toString()), stream.headers)
+    }
+
+    private suspend fun attach(tempo: Float, source: (MediaPlayer) -> Unit) {
         releasePlayer()
         val current = MediaPlayer()
         player = current
         try {
             current.setAudioAttributes(AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-            file.inputStream().use { current.setDataSource(it.fd) }
+            source(current)
+            current.setOnCompletionListener { handlingEnd = true }
+            current.setOnSeekCompleteListener { seeking = false }
+            suspendCancellableCoroutine<Unit> { prepared ->
+                current.setOnPreparedListener {
+                    if (prepared.isActive) prepared.resume(Unit)
+                }
+                current.setOnErrorListener { _, what, extra ->
+                    if (prepared.isActive) prepared.resumeWithException(IllegalStateException("Audio $what/$extra"))
+                    true
+                }
+                current.prepareAsync()
+            }
             current.setOnErrorListener { _, _, _ ->
                 error("Die eingebettete Tonspur konnte nicht abgespielt werden.")
                 true
             }
-            current.setOnCompletionListener { handlingEnd = true }
-            current.setOnSeekCompleteListener { seeking = false }
-            current.prepare()
-            startAt(tempo, playing)
+            startAt(tempo, true)
         } catch (exception: Exception) {
             releasePlayer()
             throw exception
@@ -202,7 +316,13 @@ internal class Narration(
         updateMarker(null)
     }
 
-    fun pause() { player?.takeIf { it.isPlaying }?.pause() }
+    fun pause() {
+        try {
+            player?.takeIf { it.isPlaying }?.pause()
+        } catch (_: IllegalStateException) {
+            releasePlayer()
+        }
+    }
 
     fun play(tempo: Float) {
         player?.let {
