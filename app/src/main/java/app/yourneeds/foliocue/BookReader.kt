@@ -7,6 +7,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.core.view.ViewCompat
+import kotlin.math.roundToInt
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,6 +75,8 @@ internal fun BookReader(
     var paper by remember { mutableStateOf(Paper.entries.getOrElse(prefs.getInt("paper", 0)) { Paper.Day }) }
     var font by remember { mutableStateOf(Typeface.entries.getOrElse(prefs.getInt("font", 0)) { Typeface.Original }) }
     var size by remember { mutableIntStateOf(prefs.getInt("size", 100).coerceIn(75, 200)) }
+    var highlightDelay by remember { mutableIntStateOf(prefs.getInt("$bookKey.highlightDelay", 0).coerceIn(-1500, 1500)) }
+    val activeHighlightDelay by rememberUpdatedState(highlightDelay)
     var speed by remember { mutableFloatStateOf(prefs.getFloat("speed", 1f).coerceIn(0.75f, 2f)) }
     var controls by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<Int?>(null) }
@@ -126,12 +132,14 @@ internal fun BookReader(
         prefs.edit().putInt("$bookKey.chapter", index).apply()
     }
 
+    fun leaveReader() {
+        ownerScope.launch { syncPending() }
+        close()
+    }
+
     BackHandler {
         if (!controls && mode != Mode.Listen) controls = true
-        else {
-            ownerScope.launch { syncPending() }
-            close()
-        }
+        else leaveReader()
     }
 
     LaunchedEffect(activity, controls, mode) {
@@ -180,10 +188,8 @@ internal fun BookReader(
             val anchoredCue = location.anchor?.let { anchor -> marks.indexOfFirst { it.fragment == anchor } }
             val startCue = anchoredCue?.takeIf { it >= 0 }
                 ?: prefs.getInt("$bookKey.cue.${location.index}", 0)
-            Narration(marks, startCue, {
-                fragment = it
-                if (it != null) lastAnchor = it
-            }, { audioError = true; playing = false })
+            Narration(marks, startCue, { fragment = it }, { lastAnchor = it },
+                { audioError = true; playing = false })
         }
     }
     var engine by remember(narration) { mutableStateOf<Narration?>(null) }
@@ -191,6 +197,9 @@ internal fun BookReader(
     val audioFile = remember(file) { File(context.cacheDir, "narration-$bookKey.audio") }
 
     DisposableEffect(narration) { onDispose { narration?.close() } }
+    LaunchedEffect(chapterFailed, audioError, mode, cues) {
+        if (chapterFailed || audioError || (mode == Mode.Follow && cues?.isEmpty() == true)) controls = true
+    }
     LaunchedEffect(narration, wantsPlay) {
         if (!wantsPlay || narration == null) return@LaunchedEffect
         wantsPlay = false
@@ -226,11 +235,17 @@ internal fun BookReader(
                 engine = narration
                 loadingAudio = false
             }
+            val retry = audioError
             audioError = false
-            if (engine == narration) narration.play(speed) else attach()
+            if (engine == narration && !retry) {
+                narration.play(speed)
+            } else {
+                attach()
+            }
+
             while (true) {
                 delay(16)
-                if (narration.tick(speed)) {
+                if (narration.tick(speed, activeHighlightDelay)) {
                     engine = null
                     attach()
                 }
@@ -299,15 +314,12 @@ internal fun BookReader(
             }
             controls = false
         },
-        MenuItem(R.string.shelf) {
-            ownerScope.launch { syncPending() }
-            close()
-        },
-    )) { menu ->
+        MenuItem(R.string.reader_back, action = ::leaveReader),
+    ) + if (mode == Mode.Follow) listOf(MenuItem(R.string.sync_timing) { dialog = R.string.sync_timing }) else emptyList()) { menu ->
     Surface(color = colors.background, contentColor = colors.onBackground, modifier = Modifier.fillMaxSize()) {
         Column(Modifier.then(if (controls || mode == Mode.Listen) Modifier.safeDrawingPadding() else Modifier)) {
             if (controls || mode == Mode.Listen) {
-                FolioBar(book.title, menu)
+                FolioBar(book.title, menu, back = ::leaveReader)
                 if (book.spine.any { it.overlay.isNotBlank() }) {
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
                         Mode.entries.forEachIndexed { index, entry ->
@@ -348,6 +360,10 @@ internal fun BookReader(
                                 .also { page ->
                                     view = page
                                     page.onPageTap = { controls = !controls }
+                                    ViewCompat.addAccessibilityAction(page, ctx.getString(R.string.reader_controls)) { _, _ ->
+                                        controls = true
+                                        true
+                                    }
                                     page.onPageError = { chapterFailed = true; controls = true }
                                 }
                         },
@@ -430,8 +446,26 @@ internal fun BookReader(
                             }
                         }
                     }
+                } else if (title == R.string.sync_timing) {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        Text(stringResource(R.string.sync_timing_hint))
+                        Text(stringResource(R.string.sync_timing_value, highlightDelay), Modifier.padding(top = 8.dp))
+                        fun changeTiming(value: Int) {
+                            highlightDelay = value.coerceIn(-1500, 1500)
+                            prefs.edit().putInt("$bookKey.highlightDelay", highlightDelay).apply()
+                        }
+                        Slider(
+                            value = highlightDelay.toFloat(),
+                            onValueChange = { changeTiming(it.roundToInt()) },
+                            valueRange = -1500f..1500f,
+                            steps = 59,
+                        )
+                        TextButton(onClick = { changeTiming(0) }) {
+                            Text(stringResource(R.string.reset_timing))
+                        }
+                    }
                 } else {
-                    Column {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
                         Choice(stringResource(R.string.theme), Paper.entries.map { it.label }, paper.ordinal) {
                             paper = Paper.entries[it]
                             prefs.edit().putInt("paper", it).apply()

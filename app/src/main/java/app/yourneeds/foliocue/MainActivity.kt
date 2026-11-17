@@ -18,6 +18,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +66,9 @@ private fun FolioCue(activity: MainActivity) {
     val context = LocalContext.current
     val store = remember { Profiles(context) }
     val scope = rememberCoroutineScope()
+    val installed = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty() }
+    val updates = remember { AppUpdates(store, installed, scope) }
+    LaunchedEffect(updates) { updates.check(automatic = true) }
     val display = remember { context.getSharedPreferences("display", Context.MODE_PRIVATE) }
     val readerPrefs = remember { context.getSharedPreferences("reader", Context.MODE_PRIVATE) }
     var paper by remember { mutableStateOf(readerPrefs.paper()) }
@@ -163,7 +168,7 @@ private fun FolioCue(activity: MainActivity) {
         }
     }
 
-    BackHandler(enabled = !form && !busy && (opened != null || settings || details != null || chooser || history.size > 1)) {
+    BackHandler(enabled = settings || (!form && !busy && (opened != null || details != null || chooser || history.size > 1))) {
         when {
             opened != null -> opened = null
             settings -> settings = false
@@ -192,7 +197,7 @@ private fun FolioCue(activity: MainActivity) {
     }
 
     if (settings) {
-        SettingsScreen(readerPrefs, store, paper, accent,
+        SettingsScreen(readerPrefs, updates, paper, accent,
             { paper = it; readerPrefs.edit().putInt("paper", it.ordinal).apply() },
             { accent = it; readerPrefs.edit().putInt("accent", it.ordinal).apply() },
         ) { settings = false }
@@ -274,16 +279,24 @@ private fun FolioCue(activity: MainActivity) {
             if (!busy) importBook.launch(arrayOf("application/epub+zip", "application/octet-stream"))
         },
         MenuItem(R.string.profiles) { if (!busy) chooser = true },
-        MenuItem(R.string.app_settings) { if (!busy) settings = true },
+        MenuItem(R.string.app_settings) { settings = true },
     ), brand = true) { menu ->
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.safeDrawingPadding().widthIn(max = 1120.dp).padding(horizontal = 18.dp).fillMaxWidth()) {
             FolioBar(stringResource(if (localOnly) R.string.downloads else R.string.shelf), menu) {
+                IconButton(onClick = { settings = true }) {
+                    Icon(Icons.Default.Settings, stringResource(R.string.app_settings))
+                }
                 if (selected == null && !localOnly) {
                     TextButton(enabled = !busy, onClick = { editing = null; problem = null; form = true }) {
                         Text(stringResource(R.string.add))
                     }
+                }
+            }
+            updates.available?.let { release ->
+                FilledTonalButton(onClick = { settings = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.release_available, release.version))
                 }
             }
             val current = history.lastOrNull().takeUnless { localOnly }

@@ -7,6 +7,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
@@ -56,12 +58,27 @@ internal fun FolioDrawer(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun FolioBar(title: String, openMenu: () -> Unit, actions: @Composable RowScope.() -> Unit = {}) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = openMenu) { Icon(Icons.Default.Menu, stringResource(R.string.open_menu)) }
-        Text(title, Modifier.weight(1f).padding(end = 8.dp),
-            style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        actions()
-    }
+internal fun FolioBar(
+    title: String, openMenu: () -> Unit, back: (() -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    TopAppBar(
+        title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        navigationIcon = {
+            if (back == null) IconButton(onClick = openMenu) {
+                Icon(Icons.Default.Menu, stringResource(R.string.open_menu))
+            } else IconButton(onClick = back) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reader_back))
+            }
+        },
+        actions = {
+            actions()
+            if (back != null) IconButton(onClick = openMenu) {
+                Icon(Icons.Default.MoreVert, stringResource(R.string.open_menu))
+            }
+        },
+        windowInsets = WindowInsets(0, 0, 0, 0),
+    )
 }

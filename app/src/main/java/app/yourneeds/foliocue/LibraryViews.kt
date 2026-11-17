@@ -9,6 +9,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,6 +75,7 @@ internal fun LibraryTile(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun DetailScreen(
     book: BookDetail, covers: CoverStore, busy: Boolean, problem: Int?, storageRevision: Int,
@@ -92,7 +97,7 @@ internal fun DetailScreen(
     }
     val info: @Composable (Modifier) -> Unit = { modifier ->
         Column(modifier, verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Text(title, style = MaterialTheme.typography.headlineMedium)
+            Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
             if (author.isNotBlank()) Text(author, style = MaterialTheme.typography.titleMedium)
             if (online != null) Text(stringResource(R.string.stream_source), style = MaterialTheme.typography.labelMedium)
             if (offline) Text(stringResource(R.string.offline_ready), style = MaterialTheme.typography.labelMedium)
@@ -119,11 +124,16 @@ internal fun DetailScreen(
             if (description.isNotBlank()) Text(description, style = MaterialTheme.typography.bodyLarge)
         }
     }
-    Surface(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.safeDrawingPadding().widthIn(max = 1000.dp).fillMaxWidth()
+    Scaffold(topBar = {
+        TopAppBar(title = { Text(stringResource(R.string.book_info)) }, navigationIcon = {
+            IconButton(onClick = close, enabled = !busy) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
+            }
+        })
+    }) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+            Column(Modifier.widthIn(max = 1000.dp).fillMaxWidth()
                 .verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                TextButton(onClick = close, enabled = !busy) { Text(stringResource(R.string.back)) }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 problem?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
                 BoxWithConstraints(Modifier.fillMaxWidth()) {

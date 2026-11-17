@@ -253,6 +253,7 @@ internal class Narration(
     chapterCues: List<Cue>,
     startIndex: Int,
     private val mark: (String?) -> Unit,
+    private val trackPosition: (String) -> Unit,
     private val error: (String) -> Unit,
 ) {
     private var player: MediaPlayer? = null
@@ -260,6 +261,7 @@ internal class Narration(
     val index get() = timeline.index
     private var handlingEnd = false
     private var seeking = false
+    private var tempoAfterSeek: Float? = null
     var finished = false
         private set
     private var lastMark: String? = null
@@ -282,7 +284,14 @@ internal class Narration(
                 .setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
             source(current)
             current.setOnCompletionListener { handlingEnd = true }
-            current.setOnSeekCompleteListener { seeking = false }
+            current.setOnSeekCompleteListener {
+                seeking = false
+                val tempoToPlay = tempoAfterSeek
+                tempoAfterSeek = null
+                if (tempoToPlay != null) {
+                    try { play(tempoToPlay) } catch (_: IllegalStateException) { error("Audio seek") }
+                }
+            }
             suspendCancellableCoroutine<Unit> { prepared ->
                 current.setOnPreparedListener {
                     if (prepared.isActive) prepared.resume(Unit)
@@ -297,26 +306,29 @@ internal class Narration(
                 error("Die eingebettete Tonspur konnte nicht abgespielt werden.")
                 true
             }
-            startAt(tempo, true)
+            startAt(tempo)
         } catch (exception: Exception) {
             releasePlayer()
             throw exception
         }
     }
 
-    private fun startAt(tempo: Float, playing: Boolean) {
+    private fun startAt(tempo: Float) {
         val current = player ?: return
         val start = timeline.cue.start
-        seeking = current.currentPosition != start
-        if (seeking) current.seekTo(start.toLong(), MediaPlayer.SEEK_CLOSEST)
-        if (playing) {
-            current.playbackParams = PlaybackParams().allowDefaults().setSpeed(tempo)
-            current.start()
-        }
         updateMarker(null)
+        if (current.currentPosition == start) {
+            play(tempo)
+        } else {
+            if (current.isPlaying) current.pause()
+            seeking = true
+            tempoAfterSeek = tempo
+            current.seekTo(start.toLong(), MediaPlayer.SEEK_CLOSEST)
+        }
     }
 
     fun pause() {
+        tempoAfterSeek = null
         try {
             player?.takeIf { it.isPlaying }?.pause()
         } catch (_: IllegalStateException) {
@@ -325,13 +337,17 @@ internal class Narration(
     }
 
     fun play(tempo: Float) {
+        if (seeking) {
+            tempoAfterSeek = tempo
+            return
+        }
         player?.let {
             it.playbackParams = PlaybackParams().allowDefaults().setSpeed(tempo)
             it.start()
         }
     }
 
-    fun tick(tempo: Float): Boolean {
+    fun tick(tempo: Float, highlightDelayMs: Int): Boolean {
         val current = player ?: return false
         if (seeking) return false
         val ended = handlingEnd
@@ -349,8 +365,11 @@ internal class Narration(
                 releasePlayer()
                 return true
             }
-            CueAdvance.SEEK -> startAt(tempo, true)
-            CueAdvance.CONTINUE -> updateMarker(timeline.fragmentAt(position))
+            CueAdvance.SEEK -> startAt(tempo)
+            CueAdvance.CONTINUE -> {
+                timeline.fragmentAt(position)?.let(trackPosition)
+                updateMarker(timeline.fragmentAt(position, highlightDelayMs))
+            }
         }
         return false
     }
@@ -367,6 +386,7 @@ internal class Narration(
         player = null
         handlingEnd = false
         seeking = false
+        tempoAfterSeek = null
     }
 
     fun close() { releasePlayer() }

@@ -113,4 +113,17 @@
     <string name="stream_error">Could not open this book from the server.</string>
     <string name="open_releases">Open GitHub releases</string>
     <string name="stream_retry">Chapter could not load. Try again</string>
+    <string name="update_token_configure">Set up automatic checks</string>
+    <string name="update_browser_hint">Opens the latest release in your browser. Sign in to GitHub there to view and download it.</string>
+    <string name="update_token_change">Manage GitHub access</string>
+    <string name="update_check_automatic">Audilege checks at app launch after GitHub access is configured.</string>
+    <string name="update_token_save">Save and check</string>
+    <string name="update_token_remove">Remove saved access</string>
+    <string name="material_display">Appearance</string>
+    <string name="sync_timing">Read-along timing</string>
+    <string name="sync_timing_hint">Move the highlight earlier or later for this book. The audio keeps playing at the same position.</string>
+    <string name="sync_timing_value">Highlight offset: %1$+d ms</string>
+    <string name="reset_timing">Reset timing</string>
+    <string name="reader_controls">Show reading controls</string>
+    <string name="reader_back">Back to book details</string>
 </resources>

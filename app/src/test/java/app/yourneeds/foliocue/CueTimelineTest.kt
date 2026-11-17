@@ -22,6 +22,20 @@ class CueTimelineTest {
         assertEquals("three", timeline.fragmentAt(650))
     }
 
+    @Test fun adjustsTheHighlightWithoutChangingThePlayingCueOrCrossingTracks() {
+        val timeline = CueTimeline(listOf(
+            Cue("one", "part.mp3", 0, 200),
+            Cue("two", "part.mp3", 200, 400),
+            Cue("three", "next.mp3", 0, 200),
+        ), 0)
+        assertEquals("two", timeline.fragmentAt(180, -30))
+        assertEquals(0, timeline.index)
+        assertEquals(CueAdvance.CONTINUE, timeline.advance(210, false))
+        assertEquals("one", timeline.fragmentAt(210, 30))
+        assertNull(timeline.fragmentAt(395, -30))
+        assertEquals(1, timeline.index)
+    }
+
     @Test fun seeksOnBackwardsClipsAndSwitchesAtTheEndOfAnAudioPart() {
         val timeline = CueTimeline(listOf(
             Cue("one", "part.mp3", 600, 800),

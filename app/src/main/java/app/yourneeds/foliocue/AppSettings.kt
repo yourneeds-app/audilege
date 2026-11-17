@@ -1,5 +1,6 @@
 package app.yourneeds.foliocue
 
+import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
@@ -7,8 +8,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -18,6 +25,7 @@ import java.net.HttpURLConnection
 import java.net.URI
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -42,8 +50,8 @@ internal fun appearanceColors(paper: Paper, accent: Accent): ColorScheme {
 
 internal fun SharedPreferences.paper() = Paper.entries.getOrElse(getInt("paper", 0)) { Paper.Day }
 
-private const val RELEASES = "https://github.com/yourneeds-app/audilege/releases"
-private data class Release(val version: String, val link: String)
+internal const val RELEASES = "https://github.com/yourneeds-app/audilege/releases"
+internal data class Release(val version: String, val link: String)
 private class UpdateAccessDenied : Exception()
 
 private fun checkRelease(token: String): Release {
@@ -81,27 +89,117 @@ private fun newerVersion(candidate: String, installed: String): Boolean {
     return false
 }
 
+internal class AppUpdates(private val store: Profiles, val installed: String, private val scope: CoroutineScope) {
+    private var token = runCatching { store.updateToken() }.getOrDefault("")
+    var configured by mutableStateOf(token.isNotBlank())
+        private set
+    var checking by mutableStateOf(false)
+        private set
+    var status by mutableStateOf<Int?>(null)
+        private set
+    var available by mutableStateOf<Release?>(null)
+        private set
+
+    fun check(candidate: String = token, automatic: Boolean = false) {
+        if (checking || (automatic && candidate.isBlank())) return
+        if (candidate.isBlank()) {
+            status = R.string.update_missing
+            return
+        }
+        checking = true
+        status = null
+        scope.launch {
+            try {
+                val release = withContext(Dispatchers.IO) {
+                    checkRelease(candidate).also { if (token != candidate) store.saveUpdateToken(candidate) }
+                }
+                token = candidate
+                configured = true
+                available = release.takeIf { newerVersion(it.version, installed) }
+                if (available == null) status = R.string.up_to_date
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (_: UpdateAccessDenied) {
+                status = R.string.update_access
+            } catch (_: Exception) {
+                status = R.string.update_error
+            } finally {
+                checking = false
+            }
+        }
+    }
+
+    fun clearAccess() {
+        if (checking) return
+        checking = true
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) { store.saveUpdateToken("") }
+                token = ""
+                configured = false
+                available = null
+                status = null
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (_: Exception) {
+                status = R.string.update_error
+            } finally {
+                checking = false
+            }
+        }
+    }
+}
+
+private fun Context.openUpdate(url: String) {
+    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettingsScreen(
-    prefs: SharedPreferences, store: Profiles, paper: Paper, accent: Accent,
+    prefs: SharedPreferences, updates: AppUpdates, paper: Paper, accent: Accent,
     setPaper: (Paper) -> Unit, setAccent: (Accent) -> Unit, close: () -> Unit,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val installed = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty() }
-    var savedToken by remember { mutableStateOf(runCatching { store.updateToken() }.getOrDefault("")) }
+    var accessDialog by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf("") }
-    var checking by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<Int?>(null) }
-    var available by remember { mutableStateOf<Release?>(null) }
+    var browserFailed by remember { mutableStateOf(false) }
+    fun open(url: String) { browserFailed = runCatching { context.openUpdate(url) }.isFailure }
     var font by remember { mutableIntStateOf(prefs.getInt("font", 0).coerceIn(Typeface.entries.indices)) }
     var size by remember { mutableIntStateOf(prefs.getInt("size", 100).coerceIn(75, 200)) }
 
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(Modifier.safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp),
+    Scaffold(topBar = {
+        TopAppBar(title = { Text(stringResource(R.string.app_settings)) }, navigationIcon = {
+            IconButton(onClick = close) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
+        })
+    }) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+        Column(Modifier.widthIn(max = 600.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = close) { Text(stringResource(R.string.back)) }
-            Text(stringResource(R.string.app_settings), style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.updates), style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(R.string.current_version, updates.installed))
+            Text(stringResource(if (updates.configured) R.string.update_check_automatic else R.string.update_browser_hint),
+                style = MaterialTheme.typography.bodyMedium)
+            Button(enabled = !updates.checking, onClick = {
+                if (updates.configured) updates.check() else open("$RELEASES/latest")
+            }) { Text(stringResource(R.string.check_updates)) }
+            if (updates.checking) LinearProgressIndicator(Modifier.fillMaxWidth())
+            Column(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
+                updates.available?.let { release ->
+                    Text(stringResource(R.string.release_available, release.version))
+                    OutlinedButton(onClick = { open(release.link) }) { Text(stringResource(R.string.open_update)) }
+                }
+                updates.status?.let { Text(stringResource(it)) }
+                if (browserFailed) Text(stringResource(R.string.update_error))
+            }
+            if (updates.configured) TextButton(onClick = { open("$RELEASES/latest") }) {
+                Text(stringResource(R.string.open_releases))
+            }
+            TextButton(enabled = !updates.checking, onClick = { accessDialog = true }) {
+                Text(stringResource(if (updates.configured) R.string.update_token_change else R.string.update_token_configure))
+            }
+            HorizontalDivider()
+            Text(stringResource(R.string.material_display), style = MaterialTheme.typography.titleLarge)
             Choice(stringResource(R.string.theme), Paper.entries.map { it.label }, paper.ordinal) { setPaper(Paper.entries[it]) }
             Choice(stringResource(R.string.accent), Accent.entries.map { it.label }, accent.ordinal) { setAccent(Accent.entries[it]) }
             Choice(stringResource(R.string.font), Typeface.entries.map { it.label }, font) {
@@ -111,59 +209,33 @@ internal fun SettingsScreen(
             Text("${stringResource(R.string.size)} · $size %")
             Slider(size.toFloat(), { size = it.toInt(); prefs.edit().putInt("size", size).apply() },
                 modifier = Modifier.widthIn(max = 480.dp), valueRange = 75f..200f)
-            HorizontalDivider()
-            Text(stringResource(R.string.updates), style = MaterialTheme.typography.titleLarge)
-            Text(stringResource(R.string.current_version, installed))
-            if (savedToken.isEmpty() || input.isNotBlank()) Text(stringResource(R.string.github_token_hint))
-            OutlinedTextField(input, { input = it }, modifier = Modifier.fillMaxWidth().widthIn(max = 520.dp),
-                singleLine = true, enabled = !checking, visualTransformation = PasswordVisualTransformation(),
-                label = { Text(stringResource(R.string.github_token)) },
-                supportingText = if (savedToken.isNotEmpty()) {
-                    { Text(stringResource(R.string.password_saved_hint)) }
-                } else null,
-            )
-            Button(enabled = !checking, onClick = {
-                val token = input.trim().ifBlank { savedToken }
-                available = null
-                message = null
-                if (token.isBlank()) {
-                    message = R.string.update_missing
-                    return@Button
-                }
-                checking = true
-                scope.launch {
-                    try {
-                        val release = withContext(Dispatchers.IO) {
-                            checkRelease(token).also { if (token != savedToken) store.saveUpdateToken(token) }
-                        }
-                        savedToken = token
-                        input = ""
-                        if (newerVersion(release.version, installed)) available = release
-                        else message = R.string.up_to_date
-                    } catch (failure: CancellationException) {
-                        throw failure
-                    } catch (failure: UpdateAccessDenied) {
-                        message = R.string.update_access
-                    } catch (failure: Exception) {
-                        message = R.string.update_error
-                    } finally {
-                        checking = false
-                    }
-                }
-            }) { Text(stringResource(if (checking) R.string.connecting else R.string.check_updates)) }
-            message?.let { Text(stringResource(it)) }
-            if (available == null) TextButton(onClick = {
-                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(RELEASES))) }
-                    .onFailure { message = R.string.update_error }
-            }) { Text(stringResource(R.string.open_releases)) }
-            available?.let { release ->
-                Text(stringResource(R.string.release_available, release.version))
-                OutlinedButton(onClick = {
-                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(release.link))) }
-                        .onFailure { message = R.string.update_error }
-                }) { Text(stringResource(R.string.open_update)) }
-            }
+
+        }
         }
     }
+    if (accessDialog) AlertDialog(
+        onDismissRequest = { accessDialog = false; input = "" },
+        title = { Text(stringResource(R.string.github_token)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.github_token_hint))
+                OutlinedTextField(input, { input = it }, modifier = Modifier.fillMaxWidth(),
+                    singleLine = true, visualTransformation = PasswordVisualTransformation(),
+                    label = { Text(stringResource(R.string.github_token)) })
+                if (updates.configured) TextButton(onClick = {
+                    updates.clearAccess()
+                    accessDialog = false
+                    input = ""
+                }) { Text(stringResource(R.string.update_token_remove)) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = input.isNotBlank(), onClick = {
+                updates.check(input.trim())
+                accessDialog = false
+                input = ""
+            }) { Text(stringResource(R.string.update_token_save)) }
+        },
+        dismissButton = { TextButton(onClick = { accessDialog = false; input = "" }) { Text(stringResource(R.string.cancel)) } },
+    )
 }
-

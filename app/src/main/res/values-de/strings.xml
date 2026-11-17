@@ -113,4 +113,17 @@
     <string name="stream_error">Dieses Buch ließ sich auf dem Server nicht öffnen.</string>
     <string name="open_releases">GitHub-Releases öffnen</string>
     <string name="stream_retry">Kapitel konnte nicht geladen werden. Erneut versuchen</string>
+    <string name="update_token_configure">Automatische Prüfung einrichten</string>
+    <string name="update_browser_hint">Öffnet das neueste Release im Browser. Dort kannst du es mit deiner GitHub-Anmeldung ansehen und herunterladen.</string>
+    <string name="update_token_change">GitHub-Zugriff verwalten</string>
+    <string name="update_check_automatic">Mit eingerichtetem GitHub-Zugriff prüft Audilege beim App-Start automatisch.</string>
+    <string name="update_token_save">Speichern und prüfen</string>
+    <string name="update_token_remove">Gespeicherten Zugriff entfernen</string>
+    <string name="material_display">Darstellung</string>
+    <string name="sync_timing">Mitlese-Timing</string>
+    <string name="sync_timing_hint">Verschiebt die Markierung für dieses Buch nach vorn oder hinten. Die Tonspur läuft an derselben Stelle weiter.</string>
+    <string name="sync_timing_value">Versatz der Markierung: %1$+d ms</string>
+    <string name="reset_timing">Timing zurücksetzen</string>
+    <string name="reader_controls">Lesesteuerung einblenden</string>
+    <string name="reader_back">Zurück zu den Buchdetails</string>
 </resources>
