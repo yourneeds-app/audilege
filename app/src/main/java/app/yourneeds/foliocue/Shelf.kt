@@ -1,10 +1,11 @@
 package app.yourneeds.foliocue
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,7 +31,7 @@ internal enum class ShelfTab(val label: Int, val icon: Int) {
 internal data class ShelfItem(val key: String, val title: String, val author: String,
     val cover: () -> InputStream?, val open: () -> Unit, val caption: String = "")
 
-internal data class RecentBook(val item: ShelfItem, val modeLabel: Int, val chapter: String, val fraction: Float?)
+internal data class RecentBook(val item: ShelfItem, val mode: Mode, val chapter: String, val fraction: Float?)
 
 @Composable
 internal fun ShelfTabs(tab: ShelfTab, enabled: Boolean, onSelect: (ShelfTab) -> Unit) {
@@ -56,25 +57,37 @@ internal fun ShelfRail(tab: ShelfTab, enabled: Boolean, onSelect: (ShelfTab) -> 
 }
 
 @Composable
-private fun ResumeCard(hero: RecentBook, covers: CoverStore, enabled: Boolean) {
-    val item = hero.item
+private fun ResumeCard(book: RecentBook, covers: CoverStore, enabled: Boolean, modifier: Modifier) {
+    val item = book.item
     Surface(onClick = item.open, enabled = enabled, shape = AudilegeLayout.cardShape,
-        color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+        color = MaterialTheme.colorScheme.secondaryContainer, modifier = modifier) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             BookCover(item.title, covers, item.key, item.cover, Modifier.width(62.dp).aspectRatio(.71f))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(stringResource(hero.modeLabel), style = MaterialTheme.typography.labelMedium)
-                Text(item.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
+                Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
-                val line = listOf(item.author, hero.chapter).filter(String::isNotBlank).joinToString(" · ")
+                val line = listOf(item.author, book.chapter).filter(String::isNotBlank).joinToString(" · ")
                 if (line.isNotEmpty()) Text(line, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                hero.fraction?.let { LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth().padding(top = 5.dp)) }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(painterResource(modeIcon(book.mode)), null, Modifier.size(16.dp))
+                    Text(stringResource(book.mode.label), style = MaterialTheme.typography.labelMedium)
+                }
+                book.fraction?.let { LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth().padding(top = 5.dp)) }
             }
-            Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primary) {
-                if (hero.modeLabel == R.string.shelf_continue_read) {
-                    Icon(painterResource(R.drawable.shelf_book), null, Modifier.padding(8.dp).size(22.dp))
-                } else {
-                    Icon(Icons.Default.PlayArrow, null, Modifier.padding(8.dp).size(22.dp))
+        }
+    }
+}
+
+@Composable
+private fun ContinueReading(books: List<RecentBook>, covers: CoverStore, enabled: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(R.string.shelf_continue_read), Modifier.semantics { heading() },
+            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val width = if (books.size == 1) maxWidth.coerceAtMost(400.dp) else minOf(maxWidth * .90f, 340.dp)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(books, key = { it.item.key }) { book ->
+                    ResumeCard(book, covers, enabled, Modifier.width(width))
                 }
             }
         }
@@ -82,7 +95,7 @@ private fun ResumeCard(hero: RecentBook, covers: CoverStore, enabled: Boolean) {
 }
 
 @Composable
-internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: RecentBook?, covers: CoverStore, busy: Boolean,
+internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<RecentBook>, covers: CoverStore, busy: Boolean,
     list: Boolean, setList: (Boolean) -> Unit, openMenu: () -> Unit, more: (() -> Unit)?, seeAll: () -> Unit,
     header: @Composable () -> Unit, empty: @Composable () -> Unit, query: String, setQuery: (String) -> Unit) {
     var search by rememberSaveable(tab) { mutableStateOf(false) }
@@ -114,8 +127,8 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: RecentB
             LazyVerticalGrid(columns, state = grid, contentPadding = PaddingValues(start = AudilegeLayout.pageInset, end = AudilegeLayout.pageInset, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 item(span = { GridItemSpan(maxLineSpan) }) { header() }
-                if (tab == ShelfTab.Library && recent != null && query.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
-                    ResumeCard(recent, covers, !busy)
+                if (tab == ShelfTab.Library && recent.isNotEmpty() && !search && query.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                    ContinueReading(recent, covers, !busy)
                 }
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {

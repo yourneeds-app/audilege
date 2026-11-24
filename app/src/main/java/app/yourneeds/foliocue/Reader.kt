@@ -362,7 +362,7 @@ internal class Narration(
     private val clock = ChapterClock(cues)
     val index get() = timeline.index
     val audio get() = timeline.cue.audio
-    val fraction get() = index.toDouble() / cues.size
+    val fraction get() = fractionAt(progress())
     val anchor get() = timeline.cue.fragment
     private var player: MediaPlayer? = null
     private var remote: AirPlayTrack? = null
@@ -381,6 +381,9 @@ internal class Narration(
         val ms = if (prepared && !seeking) remote?.currentPosition ?: player?.currentPosition ?: startMs else startMs
         return TrackProgress(clock.elapsed(index, ms), clock.duration)
     }
+
+    fun fractionAt(position: TrackProgress): Double =
+        if (finished) 1.0 else (position.elapsedMs.toDouble() / position.durationMs).coerceIn(0.0, 1.0)
 
     suspend fun attach(file: File) {
         val generation = senderGeneration

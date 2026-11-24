@@ -7,7 +7,7 @@ Audilege is an Android reader and audiobook player for [BookOrbit](https://booko
 ## Getting started
 
 - Add your BookOrbit server under **Profile → Add profile** and sign in with your existing account. Audilege stores session tokens in encrypted storage and refreshes them when needed. Existing OPDS profiles and **Connect via OPDS** are also supported.
-- Browse the library as a cover grid or a list, search by title or author, and resume the last book you opened. On tablets and other wide screens, the library and book details appear side by side.
+- Above **My books**, swipe through **Continue reading** and tap a book to resume at its saved position. This shelf includes unfinished local books and supported EPUBs in your BookOrbit account. Browse the full library as a cover grid or a list, or search by title or author. On wide screens, the library and book details appear side by side.
 - Choose **Read**, **Listen**, or **Read along** on the book details screen. For compatible BookOrbit books, all three modes can start from the server. Use **Save offline** to keep a copy that can be opened or removed under **Downloads**.
 - Tap the page to show the controls. Under **Aa**, adjust the font, size, line spacing, margins, paper color, and read-along highlighting. Use the table of contents, search, and bookmarks to move between passages.
 - In **Listen**, use the chapter controls, time jumps, playback speed, and sleep timer. Audilege skips text-only sections during playback. The mini-player, connected headphones, and Android media controls can also control playback.

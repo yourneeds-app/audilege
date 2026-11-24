@@ -4,10 +4,12 @@ import java.io.File
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
+import java.util.concurrent.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 
 private const val PAGE_SIZE = 60
+private val excludedContinueStatuses = setOf("unread", "read", "skimmed", "abandoned")
 internal class OrbitHttp(val status: Int) : Exception("BookOrbit HTTP $status")
 
 internal data class OrbitBook(
@@ -109,16 +111,88 @@ internal class OrbitCatalog(
         val response = json(profile.catalog, body, token)
         val items = response.getJSONArray("items")
         val entries = items.objects().mapNotNull { book ->
-            val id = book.optLong("id", 0)
-            if (id <= 0) return@mapNotNull null
             val files = book.optJSONArray("files")
             val edition = files?.let(::preferredEpubFile)
             if (files != null && edition == null) return@mapNotNull null
-            val title = book.optString("title").ifBlank { book.optJSONObject("metadata")?.optString("title").orEmpty() }
-            CatalogEntry(title.ifBlank { "#$id" }, URI("$api/books/$id"), true, author(book), editionFileId = edition)
+            val primary = files?.objects()?.firstOrNull { it.optString("role") == "primary" }?.optLong("id")?.takeIf { it > 0 }
+            catalogEntry(book, edition, primary, book.optDouble("readingProgress", Double.NaN).takeIf { it in 0.0..100.0 })
         }
         val hasMore = items.length() > 0 && (index + 1L) * PAGE_SIZE < response.optLong("total", 0L)
         CatalogPage(entries, if (hasMore) URI("${profile.catalog}?page=${index + 1}") else null)
+    }
+
+    fun continueReading(): List<CatalogEntry> {
+        val response = withSession { token -> json(URI("$api/dashboard/scrollers/continue-reading?limit=50"), null, token) }
+        val entries = response.getJSONArray("books").objects().mapNotNull(::continueEntry).distinctBy { it.url }
+        if (response.optInt("total") <= 50) return entries
+        val extra = try {
+            withSession(::continueReadingOverflow)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // The authenticated dashboard already succeeded. Discard partial overflow pages on failure.
+            return entries
+        }
+        return (entries + extra).distinctBy { it.url }
+    }
+
+    private fun continueReadingOverflow(token: String): List<CatalogEntry> {
+        // Dashboard scrollers have no second page. The general catalogue also includes libraries
+        // which the user has chosen to hide from the dashboard or its shelves.
+        val settings = json(URI("$api/auth/me"), null, token).getJSONObject("settings")
+        val selected = libraryIds(settings.optJSONObject("dashboardConfig")?.optJSONArray("libraryIds"))
+        val hidden = libraryIds(settings.optJSONObject("libraryVisibility")?.optJSONObject("hidden")?.optJSONArray("shelves"))
+        val filter = JSONObject().put("type", "group").put("join", "AND").put("rules", JSONArray()
+            .put(JSONObject().put("type", "rule").put("field", "readProgress").put("operator", "isInProgress")))
+        val body = JSONObject().put("filter", filter).put("collapseSeries", false).put("collapseLinked", false)
+            .put("sort", JSONArray().put(JSONObject().put("field", "lastReadAt").put("dir", "desc")))
+        val result = mutableListOf<CatalogEntry>()
+        val candidateIds = mutableSetOf<Long>()
+        var index = 0
+        var expectedTotal: Long? = null
+        var total: Long
+        do {
+            body.put("pagination", JSONObject().put("page", index).put("size", PAGE_SIZE))
+            val page = json(profile.catalog, body, token)
+            val cards = page.getJSONArray("items")
+            total = page.getLong("total")
+            require(total >= 0 && (expectedTotal == null || total == expectedTotal))
+            expectedTotal = total
+            val remaining = (total - index.toLong() * PAGE_SIZE).coerceAtLeast(0L)
+            require(cards.length().toLong() == minOf(PAGE_SIZE.toLong(), remaining))
+            for (book in cards.objects()) {
+                require(candidateIds.add(book.getLong("id")))
+                val libraryId = book.optLong("libraryId")
+                if (book.optString("status") != "present" || libraryId <= 0 || libraryId in hidden) continue
+                if (selected.isNotEmpty() && libraryId !in selected) continue
+                continueEntry(book)?.let(result::add)
+            }
+            index++
+        } while (index.toLong() * PAGE_SIZE < total)
+        require(candidateIds.size.toLong() == total)
+        return result
+    }
+
+    private fun libraryIds(values: JSONArray?): Set<Long> = if (values == null) emptySet() else
+        (0 until values.length()).mapNotNull { index -> (values.opt(index) as? Number)?.toLong()?.takeIf { it > 0 } }.toSet()
+
+    private fun continueEntry(book: JSONObject): CatalogEntry? {
+        if (book.optString("readStatus") in excludedContinueStatuses) return null
+        val percent = book.optDouble("readingProgress", Double.NaN)
+        if (!percent.isFinite() || percent <= 0.0 || percent >= 100.0) return null
+        // Reading progress belongs to the primary file. Another EPUB can have a different spine.
+        val primary = book.optJSONArray("files")?.objects()?.firstOrNull { it.optString("role") == "primary" } ?: return null
+        if (!primary.optString("format").equals("epub", true)) return null
+        val edition = primary.optLong("id").takeIf { it > 0 } ?: return null
+        return catalogEntry(book, edition, edition, percent)
+    }
+
+    private fun catalogEntry(book: JSONObject, edition: Long?, primary: Long?, percent: Double?): CatalogEntry? {
+        val id = book.optLong("id")
+        if (id <= 0) return null
+        val title = book.optString("title").ifBlank { book.optJSONObject("metadata")?.optString("title").orEmpty() }
+        return CatalogEntry(title.ifBlank { "#$id" }, URI("$api/books/$id"), true, author(book),
+            editionFileId = edition, primaryFileId = primary, readingPercent = percent)
     }
 
     override fun download(url: URI, destination: File): File = withSession { token ->
@@ -133,11 +207,14 @@ internal class OrbitCatalog(
         request(URI("$api/books/files/${book.fileId}/download"), null, token) { savePublication(it, destination) }
     }
 
-    fun details(url: URI): OrbitBook = withSession { token ->
+    fun details(url: URI, resumeEpubFileId: Long? = null): OrbitBook = withSession { token ->
         val id = url.path.substringAfterLast('/').toLong()
         val book = json(URI("$api/books/$id"), null, token)
-        val fileId = preferredEpubFile(book.getJSONArray("files"))
-            ?: throw CatalogAccessException(R.string.no_epub)
+        val files = book.getJSONArray("files")
+        val fileId = if (resumeEpubFileId == null) preferredEpubFile(files) else resumeEpubFileId.takeIf { expected ->
+            expected > 0 && files.objects().any { it.optLong("id") == expected && it.optString("format").equals("epub", true) }
+        }
+        if (fileId == null) throw CatalogAccessException(R.string.no_epub)
         val meta = book.optJSONObject("metadata") ?: book
         val audioMeta = book.optJSONObject("audioMetadata") ?: meta.optJSONObject("audioMetadata")
         OrbitBook(id, fileId, author(book), meta.text("description"), meta.text("seriesName"),

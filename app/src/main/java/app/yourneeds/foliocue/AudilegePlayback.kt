@@ -496,11 +496,12 @@ internal object AudilegePlayback {
         if (!playing && lastCheckpointMs == p.elapsedMs) return
         lastCheckpointMs = p.elapsedMs
         lastPersist = SystemClock.elapsedRealtime()
-        val candidate = book.publication.progressPayload(chapter, null, engine.anchor, engine.fraction, true)
+        val chapterFraction = engine.fractionAt(p)
+        val candidate = book.publication.progressPayload(chapter, null, engine.anchor, chapterFraction, true)
         prefs?.edit()?.also { if (candidate != null) it.putString("$key.passage", candidate.toString()) }
             ?.putInt("$key.chapter",chapter)?.putInt("$key.cue.$chapter", engine.index)
             ?.putInt("$key.elapsed.$chapter",p.elapsedMs)
-            ?.putFloat("$key.shelfPercent", ((chapter + engine.fraction) * 100 / book.publication.spine.size).toFloat().coerceIn(0f,100f))
+            ?.putFloat("$key.shelfPercent", ((chapter + chapterFraction) * 100 / book.publication.spine.size).toFloat().coerceIn(0f,100f))
             ?.apply()
         if (!readerVisible) {
             val bridge = sync ?: return

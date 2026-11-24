@@ -132,7 +132,11 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
         OrbitCatalog(profile, store.credential(profile), readSession = { store.credential(profile) }) { store.renew(profile,it) }
     } else Catalog(profile, store.credential(profile))
     val catalog = remember(selected) { selected?.let { runCatching { from(it) }.getOrNull() } }
-    SyncPendingEditions(readerPrefs, folder, catalog as? OrbitCatalog)
+    val orbit = catalog as? OrbitCatalog
+    val streams = remember(orbit, folder) { orbit?.let {
+        context.getSharedPreferences("reading-shelf.${folder.name}.${it.statisticsIdentity}", Context.MODE_PRIVATE)
+    } }
+    SyncPendingEditions(readerPrefs, folder, orbit)
     SyncListeningStatistics(selected, catalog as? OrbitCatalog)
     val migrationPage = history.lastOrNull()?.page
     LaunchedEffect(folder, catalog, migrationPage) {
@@ -149,28 +153,28 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
         is Catalog -> entry.coverUrl?.let(catalog::cover)
         else -> null
     }
-    fun openDetail(detail: BookDetail, mode: Mode, local: Boolean) {
+    fun openDetail(detail: BookDetail, mode: Mode, local: Boolean, refreshProgress: Boolean = !local) {
         perform(R.string.book_error) {
             opened = withContext(Dispatchers.IO) {
                 val publication = if (local && !detail.preferLocal) Publication(detail.localFile) else detail.publication ?: error("Publication")
                 OpenBook(detail.localFile, publication, mode, detail.onlineBook,
-                    if (local) null else runCatching { detail.onlineBook?.progress() }.getOrNull())
+                    if (refreshProgress) runCatching { detail.onlineBook?.progress() }.getOrNull() else null)
             }
         }
     }
-    fun showDetails(entry: CatalogEntry, resume: Boolean = false) {
+    fun showDetails(entry: CatalogEntry, resumeIn: Mode? = null) {
         perform(R.string.stream_error) {
             val detail = withContext(Dispatchers.IO) {
                 val orbit = catalog as? OrbitCatalog
-                val online = orbit?.let { OnlineBook(it, it.details(entry.url)) }
+                val online = orbit?.let { OnlineBook(it, it.details(entry.url, if (resumeIn != null) entry.editionFileId else null)) }
                 val file = File(folder, keyOf(online?.let { "${entry.url}#${it.detail.fileId}" } ?: entry.url.toString()) + ".epub")
                 if (online != null) OfflineBooks.associate(readerPrefs,file,online.detail)
                 BookDetail(entry,online,file,online?.let { it.catalog.publication(it.detail,entry.title) }
                     ?: file.takeIf(File::isFile)?.let(::Publication), coverKey = coverKey(entry), coverLoader = { cover(entry) })
             }
             details = detail
-            if (resume && detail.publication != null) opened = withContext(Dispatchers.IO) {
-                OpenBook(detail.localFile, detail.publication,savedMode(readerPrefs,detail.localFile,detail.publication),detail.onlineBook,
+            if (resumeIn != null && detail.publication != null) opened = withContext(Dispatchers.IO) {
+                OpenBook(detail.localFile, detail.publication, if (detail.publication.spine.none { it.overlay.isNotBlank() }) Mode.Read else resumeIn, detail.onlineBook,
                     runCatching { detail.onlineBook?.progress() }.getOrNull())
             }
         }
@@ -242,7 +246,13 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
         if (book != null) {
             LaunchedEffect(book.file, folder) {
                 val detail = details?.takeIf { it.localFile == book.file }
-                book.mode?.let { readerPrefs.edit().putInt("${keyOf(book.file.absolutePath)}.mode",it.ordinal).apply() }
+                val bookKey = keyOf(book.file.absolutePath)
+                readerPrefs.edit().apply {
+                    putLong("$bookKey.shelfOpenedAt", System.currentTimeMillis())
+                    book.mode?.let { putInt("$bookKey.mode", it.ordinal) }
+                }.apply()
+                if (streams != null && book.online != null) rememberStream(streams, book.file, book.online,
+                    book.publication.title, book.publication.author, book.publication.spine.size, detail?.entry?.primaryFileId)
                 val edit = display.edit().putString("last.${folder.name}",book.file.name)
                     .putString("last.title.${folder.name}",book.publication.title)
                     .putString("last.author.${folder.name}",book.publication.author)
@@ -325,45 +335,16 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
             }.map { it.file.absolutePath }.toSet()
         }
         val items = (remote + local.filterNot { it.key in duplicateCopies }).distinctBy { it.key }
-        val lastName = display.getString("last.${folder.name}",null)
-        val lastLocal = library.firstOrNull { it.file.name == lastName }
-        val onlineUrl = display.getString("last.online.${folder.name}",null)?.let { runCatching { URI(it) }.getOrNull() }
-        val recentItem = when {
-            onlineUrl != null && catalog is OrbitCatalog -> {
-                val entry = history.flatMap { it.page.entries }.firstOrNull { it.url == onlineUrl }
-                    ?: CatalogEntry(display.getString("last.title.${folder.name}","").orEmpty(),onlineUrl,true,display.getString("last.author.${folder.name}","").orEmpty())
-                ShelfItem(coverKey(entry),entry.title,entry.author,{ cover(entry) },{
-                    if (lastLocal != null && current == null && problem != null) {
-                        val d = localDetail(lastLocal)
-                        details = d
-                        openDetail(d,savedMode(readerPrefs,d.localFile,d.publication),true)
-                    } else showDetails(entry,resume = true)
-                })
+        val recent = if (tab == ShelfTab.Library && query.isBlank()) key(folder, catalog) {
+            val entries = remember(history) { history.flatMap { it.page.entries } }
+            continueReadingBooks(readerPrefs, display, streams, folder, library, entries, selected, orbit, reload, ::cover) { localBook, entry, mode ->
+                if (localBook != null) {
+                    val detail = localDetail(localBook)
+                    details = detail
+                    openDetail(detail, mode, local = true, refreshProgress = detail.onlineBook != null && current != null)
+                } else if (entry != null) showDetails(entry, resumeIn = mode)
             }
-            lastLocal != null -> local.firstOrNull { it.key == lastLocal.file.absolutePath }?.copy(open = {
-                val d = localDetail(lastLocal)
-                details = d
-                openDetail(d,savedMode(readerPrefs,d.localFile,d.publication),true)
-            })
-            else -> null
-        }
-        val recent = recentItem?.let { entry ->
-            val lastFile = lastName?.let { File(folder,it) }
-            val mode = lastFile?.let { savedMode(readerPrefs,it,lastLocal?.publication) }
-            val lastKey = lastFile?.let { keyOf(it.absolutePath) }
-            val index = lastKey?.let { id ->
-                watchPreference(readerPrefs,setOf("$id.chapter")) { readerPrefs.getInt("$id.chapter",0) }
-            }
-            val sections = display.getInt("last.sections.${folder.name}",0)
-            val savedChapter = lastKey?.takeIf { readerPrefs.getInt("$it.shelfChapterIndex",-1) == index }
-                ?.let { readerPrefs.getString("$it.shelfChapter",null) }
-            val chapter = savedChapter ?: if (index != null && sections > 0) stringResource(R.string.shelf_section,index+1,sections) else ""
-            val percent = lastKey?.let { id ->
-                watchPreference(readerPrefs,setOf("$id.shelfPercent")) { readerPrefs.getFloat("$id.shelfPercent",-1f).toInt() }
-            }?.takeIf { it in 0..100 }?.toFloat()
-            RecentBook(entry,mode?.let { modeAction(it,true) } ?: R.string.shelf_continue_read,chapter,
-                percent?.div(100f) ?: if (index != null && sections > 0) (index.toFloat()/sections).coerceIn(0f,1f) else null)
-        }
+        } else emptyList()
         val next = current?.page?.next
         val more: (() -> Unit)? = if (current != null && next != null) ({
             perform(R.string.catalog_error) {

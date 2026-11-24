@@ -51,6 +51,7 @@ internal fun localHost(host: String): Boolean {
 internal data class CatalogEntry(
     val title: String, val url: URI, val book: Boolean, val author: String = "",
     val coverUrl: URI? = null, val editionFileId: Long? = null,
+    val primaryFileId: Long? = null, val readingPercent: Double? = null,
 )
 internal data class CatalogPage(val entries: List<CatalogEntry>, val next: URI?)
 internal class CatalogAccessException(val messageId: Int) : IllegalStateException()
