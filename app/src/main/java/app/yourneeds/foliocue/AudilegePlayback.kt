@@ -18,6 +18,8 @@ internal object AudilegePlayback {
     private var resumeAfterFocus = false
     private var job: Job? = null
     private var load: Job? = null
+    private var chapterSearch: Job? = null
+    private var retryStep: Int? = null
     private var narration: Narration? = null
     private var routeJob: Job? = null
     private var routeRevision = 0L
@@ -51,6 +53,8 @@ internal object AudilegePlayback {
         private set
     var failed by mutableStateOf(false)
         private set
+    var noNarration by mutableStateOf(false)
+        private set
     var marker by mutableStateOf<String?>(null)
         private set
     val anchor get() = narration?.anchor ?: heldAnchor
@@ -81,6 +85,11 @@ internal object AudilegePlayback {
     fun readerVisible(visible: Boolean) { readerVisible = visible }
 
     fun setListenEligible(eligible: Boolean) {
+        if (listenMode && !eligible && chapterSearch?.isActive == true) {
+            chapterSearch?.cancel()
+            loading = false
+            if (playing && narration?.finished == false) narration?.setPlaying(true, speed) else pause()
+        }
         listenMode = eligible
         if (!eligible) localMode()
     }
@@ -150,6 +159,7 @@ internal object AudilegePlayback {
         }
         job?.cancel()
         load?.cancel()
+        chapterSearch?.cancel()
         current?.close()
         narration = null
     }
@@ -212,6 +222,8 @@ internal object AudilegePlayback {
         val ctx = context ?: return
         job?.cancel()
         load?.cancel()
+        chapterSearch?.cancel()
+        retryStep = null
         narration?.close()
         narration = null
         requestedChapter = ChapterRequest(index, anchor, resumeSaved, cfi, elapsedOverride)
@@ -220,6 +232,7 @@ internal object AudilegePlayback {
         marker = null
         if (elapsedOverride == null) progress = null
         failed = false
+        noNarration = false
         loading = true
         chapter = index
         if (connectingOutput != null || switchingToPhone) return
@@ -227,11 +240,21 @@ internal object AudilegePlayback {
         if (remoteGeneration != null) AirPlaySender.metadata(opened.publication.title, opened.publication.author)
         lastCheckpointMs = -1
         val key = keyOf(opened.file.absolutePath)
-        prefs?.edit()?.putInt("$key.chapter", index)?.apply()
         val publication = opened.publication
+        val scan = listenMode
         job = scope.launch {
             try {
-                val marks = withContext(Dispatchers.IO) {
+                val target = if (scan) withContext(Dispatchers.IO) { publication.findNarratedSection(index, 1) } else index
+                if (target != index && scan && !listenMode) {
+                    openChapter(index, anchor, resumeSaved, cfi, elapsedOverride)
+                    return@launch
+                }
+                if (target != null && target != index) {
+                    // An anchor, CFI and elapsed time belong to their original spine document.
+                    openChapter(target, null, false)
+                    return@launch
+                }
+                val marks = if (target == null) emptyList() else withContext(Dispatchers.IO) {
                     publication.cues(publication.spine[index]).also { cues ->
                         // Narration still works if a damaged XHTML resource has no usable text locator.
                         try { publication.prepareNarrationLocations(index, cues) } catch (_: Exception) { }
@@ -239,9 +262,11 @@ internal object AudilegePlayback {
                 }
                 if (marks.isEmpty()) {
                     loading = false
+                    noNarration = true
                     pause()
                     return@launch
                 }
+                prefs?.edit()?.putInt("$key.chapter", index)?.apply()
                 val resolvedAnchor = anchor ?: cfi?.let { withContext(Dispatchers.IO) { publication.narrationAnchor(index,it,marks) } }
                 val marked = resolvedAnchor?.let { target -> marks.indexOfFirst { it.fragment == target }.takeIf { it >= 0 } }
                 val saved = if (resumeSaved) prefs?.getInt("$key.cue.$index",0) ?: 0 else 0
@@ -258,17 +283,14 @@ internal object AudilegePlayback {
                         sleep(0)
                         pause()
                     }
-                    if (playing && !loading && !failed) {
+                    if (playing && !loading && !failed && !engine.finished) {
                         if (engine.tick(highlightDelay)) attach(opened, engine)
                         if (engine.finished) {
                             checkpoint()
-                            if (index == publication.spine.lastIndex) {
+                            if (sleepEndChapter) {
+                                sleep(0)
                                 pause()
-                                return@launch
-                            }
-                            if (sleepEndChapter) { sleep(0); pause() }
-                            openChapter(index + 1, null, false)
-                            return@launch
+                            } else stepChapter(1, completed = true)
                         }
                         if (now - lastPersist >= 5000) checkpoint()
                     }
@@ -280,7 +302,7 @@ internal object AudilegePlayback {
                     delay(if (playing && !loading) 24L else 200L)
                 }
             } catch (cancel: CancellationException) { throw cancel }
-              catch (_: Exception) { if (isActive) onFailure() }
+              catch (_: Exception) { if (isActive) chapterFailure() }
         }
     }
 
@@ -321,7 +343,12 @@ internal object AudilegePlayback {
             leaveRoute(if (AirPlaySender.connected) R.string.route_audio_failed else R.string.route_lost, resumeOnPhone = false)
             return
         }
+        chapterFailure()
+    }
+
+    private fun chapterFailure() {
         failed = true
+        noNarration = false
         loading = false
         pause()
     }
@@ -333,13 +360,19 @@ internal object AudilegePlayback {
         if (!requestFocus()) { failed = true; return }
         playing = true
         if (!requestService()) return
-        if (connectingOutput != null || switchingToPhone) {
+        if (connectingOutput != null || switchingToPhone || chapterSearch?.isActive == true) {
             service?.refresh(force = true)
             return
         }
-        if (failed || (narration == null && !loading) || narration?.finished == true) {
+        val step = retryStep
+        if (failed && step != null) {
+            stepChapter(step, completed = narration?.finished == true)
+        } else if (narration?.finished == true && canChapterBy(1)) {
+            stepChapter(1, completed = true)
+        } else if (failed || (narration == null && !loading) || narration?.finished == true) {
             val completed = narration?.finished == true
-            openChapter(chapter, null, !completed)
+            if (failed && narration == null && requestedChapter != null) reopenRequested()
+            else openChapter(chapter, null, !completed)
         } else narration?.setPlaying(true, speed)
         service?.refresh(force = true)
     }
@@ -347,6 +380,7 @@ internal object AudilegePlayback {
     fun pause(releaseFocus: Boolean = true) {
         playing = false
         runCatching { narration?.setPlaying(false, speed) }
+        runCatching { narration?.progress() }.getOrNull()?.let { progress = it }
         if (releaseFocus) abandonFocus()
         checkpoint()
         service?.refresh(force = true)
@@ -380,12 +414,55 @@ internal object AudilegePlayback {
 
     fun skip(direction: Int) = seekTo((progress?.elapsedMs ?: 0) + direction * skipSeconds * 1000)
 
-    fun chapterBy(delta: Int) {
-        val book = activeBook ?: return
-        val target = chapter + delta
-        if (target in book.publication.spine.indices) {
-            checkpoint()
-            openChapter(target, null, false)
+    fun canChapterBy(direction: Int): Boolean {
+        val book = activeBook?.publication ?: return false
+        if (loading) return false
+        if (direction != 1 && direction != -1) return false
+        val start = chapter + direction
+        if (!listenMode) return start in book.spine.indices
+        val candidates = if (direction == 1) start..book.spine.lastIndex else start downTo 0
+        return candidates.any(book::mayHaveNarration)
+    }
+
+    fun chapterBy(delta: Int) = stepChapter(delta, completed = false)
+
+    fun selectChapter(index: Int, anchor: String?) {
+        val book = activeBook?.publication ?: return
+        if (index !in book.spine.indices) return
+        checkpoint()
+        openChapter(index, anchor, false)
+    }
+
+    private fun stepChapter(direction: Int, completed: Boolean) {
+        val book = activeBook?.publication ?: return
+        if (!canChapterBy(direction)) {
+            if (completed) pause()
+            return
+        }
+        checkpoint()
+        val start = chapter + direction
+        if (!listenMode) {
+            openChapter(start, null, false)
+            return
+        }
+        chapterSearch?.cancel()
+        narration?.setPlaying(false, speed)
+        loading = true
+        failed = false
+        chapterSearch = scope.launch {
+            try {
+                val target = withContext(Dispatchers.IO) { book.findNarratedSection(start, direction) }
+                loading = false
+                retryStep = null
+                if (target != null) openChapter(target, null, false)
+                else if (completed) pause()
+                else if (playing) narration?.setPlaying(true, speed)
+                service?.refresh(force = true)
+            } catch (cancel: CancellationException) { throw cancel }
+              catch (_: Exception) {
+                  retryStep = direction
+                  chapterFailure()
+              }
         }
     }
 
@@ -434,6 +511,9 @@ internal object AudilegePlayback {
         abandonFocus()
         job?.cancel()
         load?.cancel()
+        chapterSearch?.cancel()
+        chapterSearch = null
+        retryStep = null
         job = null
         load = null
         narration?.close()
@@ -458,6 +538,7 @@ internal object AudilegePlayback {
         startPending = false
         playing = false
         failed = false
+        noNarration = false
         loading = false
         marker = null
         progress = null

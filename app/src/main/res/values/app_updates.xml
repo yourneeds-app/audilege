@@ -1,0 +1,11 @@
+<resources>
+    <string name="update_download">Download and install update</string>
+    <string name="update_downloading">Downloading update…</string>
+    <string name="update_download_progress">Downloading update · %1$d%%</string>
+    <string name="update_install">Install update</string>
+    <string name="update_allow_install">Allow installation</string>
+    <string name="update_source_permission">The update is ready. Allow Audilege to install apps in Android settings. When you return, Android will ask you to confirm the update.</string>
+    <string name="update_download_failed">The download or its verification failed. Try again or open the release in your browser.</string>
+    <string name="update_install_failed">Android could not open the installer or its settings. Try again or open the release in your browser.</string>
+    <string name="update_file_missing">The downloaded update is no longer on this device. Download it again to install it.</string>
+</resources>

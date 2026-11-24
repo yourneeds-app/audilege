@@ -33,6 +33,8 @@
     <string name="next">Weiter</string>
     <string name="previous">Vorheriger Abschnitt</string>
     <string name="no_audio">In diesem Abschnitt ist keine synchronisierte Tonspur verfügbar.</string>
+    <string name="no_further_narration">Ab dieser Stelle gibt es keinen weiteren vertonten Abschnitt.</string>
+    <string name="narration_retry">Tonspur konnte nicht geladen werden. Erneut versuchen</string>
     <string name="theme">Hintergrund</string>
     <string name="day">Hell</string>
     <string name="cream">Creme</string>

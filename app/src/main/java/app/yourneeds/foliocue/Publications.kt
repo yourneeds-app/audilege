@@ -66,10 +66,12 @@ private fun Element.descendants(name: String) = getElementsByTagNameNS("*", name
 }
 
 internal const val BOOK_HOST = "epub.invalid"
+private val literalPercent = Regex("%(?![0-9a-fA-F]{2})")
 
 internal fun resource(base: String, href: String): URI? = runCatching {
     val origin = URI("https", BOOK_HOST, "/$base", null)
-    val uri = origin.resolve(href).normalize()
+    val reference = literalPercent.replace(href.replace(" ", "%20"), "%25")
+    val uri = origin.resolve(reference).normalize()
     require(uri.scheme == "https" && uri.rawAuthority == BOOK_HOST && uri.rawQuery == null)
     require(uri.path.split('/').none { it == "." || it == ".." || '\\' in it })
     uri
@@ -113,6 +115,7 @@ internal class Publication(
     private val sharedOverlays: Set<String>
     private val overlayDurations = mutableMapOf<String, Long>()
     private val pendingCues = mutableMapOf<Item, FutureTask<List<Cue>>>()
+    private val silentSections = mutableSetOf<Item>()
     private val recentCues = object : LinkedHashMap<Item, List<Cue>>(3, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Item, List<Cue>>?) = size > 2
     }
@@ -183,6 +186,23 @@ internal class Publication(
     fun narratedCfi(chapter: Int, anchor: String?): String? =
         synchronized(narratedChapters) { narratedChapters[chapter]?.get(anchor) }
 
+    /** Cheap navigation hint. Network and parse failures must remain retryable. */
+    fun mayHaveNarration(index: Int): Boolean {
+        val item = spine.getOrNull(index) ?: return false
+        return item.overlay in manifest && synchronized(recentCues) { item !in silentSections }
+    }
+
+    /** Verify candidate overlays on the caller's IO dispatcher, in the requested direction. */
+    fun findNarratedSection(start: Int, direction: Int): Int? {
+        require(direction == 1 || direction == -1)
+        var index = start
+        while (index in spine.indices) {
+            if (mayHaveNarration(index) && cues(spine[index]).isNotEmpty()) return index
+            index += direction
+        }
+        return null
+    }
+
     fun cues(chapter: Item): List<Cue> {
         val request = synchronized(recentCues) {
             recentCues[chapter]?.let { return it }
@@ -191,7 +211,10 @@ internal class Publication(
         request.run()
         try {
             val result = request.get()
-            synchronized(recentCues) { recentCues[chapter] = result }
+            synchronized(recentCues) {
+                recentCues[chapter] = result
+                if (result.isEmpty()) silentSections.add(chapter)
+            }
             return result
         } catch (failure: ExecutionException) {
             throw failure.cause ?: failure
@@ -202,7 +225,7 @@ internal class Publication(
 
     private fun readCues(chapter: Item): List<Cue> {
         val overlay = manifest[chapter.overlay] ?: return emptyList()
-        val stream = open(overlay.path) ?: return emptyList()
+        val stream = open(overlay.path) ?: throw java.io.IOException("Missing EPUB media overlay: ${overlay.path}")
         val cues = xml(stream).descendants("par").mapNotNull { par ->
             val text = par.children("text").firstOrNull() ?: return@mapNotNull null
             val audio = par.children("audio").firstOrNull() ?: return@mapNotNull null

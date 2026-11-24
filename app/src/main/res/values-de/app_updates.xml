@@ -1,0 +1,11 @@
+<resources>
+    <string name="update_download">Update herunterladen und installieren</string>
+    <string name="update_downloading">Update wird heruntergeladen…</string>
+    <string name="update_download_progress">Update wird heruntergeladen · %1$d%%</string>
+    <string name="update_install">Update installieren</string>
+    <string name="update_allow_install">Installation erlauben</string>
+    <string name="update_source_permission">Das Update ist bereit. Erlaube Audilege in den Android-Einstellungen, Apps zu installieren. Wenn du zurückkehrst, fragt Android, ob du das Update installieren möchtest.</string>
+    <string name="update_download_failed">Der Download oder die Prüfung der Datei ist fehlgeschlagen. Versuche es erneut oder öffne das Release im Browser.</string>
+    <string name="update_install_failed">Android konnte die Installation oder die zugehörigen Einstellungen nicht öffnen. Versuche es erneut oder öffne das Release im Browser.</string>
+    <string name="update_file_missing">Das heruntergeladene Update ist nicht mehr auf diesem Gerät. Lade es zum Installieren erneut herunter.</string>
+</resources>

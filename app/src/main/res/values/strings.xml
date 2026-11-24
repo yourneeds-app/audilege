@@ -33,6 +33,8 @@
     <string name="next">Next</string>
     <string name="previous">Previous section</string>
     <string name="no_audio">No synchronized audio is available in this section.</string>
+    <string name="no_further_narration">No narrated sections remain from this point.</string>
+    <string name="narration_retry">Audio could not be loaded. Try again</string>
     <string name="theme">Background</string>
     <string name="day">Light</string>
     <string name="cream">Cream</string>

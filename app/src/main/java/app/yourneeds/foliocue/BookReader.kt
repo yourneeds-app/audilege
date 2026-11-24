@@ -47,6 +47,13 @@ internal enum class Typeface(val label: Int, val css: String) {
 private data class Location(val index: Int, val anchor: String? = null, val revision: Int = 0,
     val cfi: String? = null, val scroll: Int? = null, val textNavigation: Boolean = false)
 
+private data class ListenJump(val start: Int, val direction: Int, val anchor: String? = null)
+private sealed interface SectionAudio {
+    data object Loading : SectionAudio
+    data object Failed : SectionAudio
+    data class Ready(val index: Int?, val cues: List<Cue>, val durationMs: Int) : SectionAudio
+}
+
 @Composable
 internal fun BookReader(
     activity: MainActivity, file: File, book: Publication, initialMode: Mode?,
@@ -103,6 +110,8 @@ internal fun BookReader(
     var chapterFailed by remember(displayed) { mutableStateOf(false) }
     var view by remember { mutableStateOf<ReaderPage?>(null) }
     val audioError = attached && playback.failed
+    var listenJump by remember(book, mode) { mutableStateOf<ListenJump?>(null) }
+    var audioRetry by remember { mutableIntStateOf(0) }
 
 
     suspend fun syncPending(force: Boolean = false) {
@@ -268,6 +277,8 @@ internal fun BookReader(
                 location = Location(playback.chapter, playback.anchor, location.revision + 1)
             }
             store()
+            if (entry == Mode.Listen && attached && playback.progress == null)
+                playback.start(context, openedAudio.copy(mode = entry), location.index, location.anchor, false, sync, location.cfi)
         }
     }
 
@@ -315,13 +326,36 @@ internal fun BookReader(
         }
     }
 
-    val cues by produceState<List<Cue>?>(null, location) {
-        value = null
-        value = withContext(Dispatchers.IO) {
-            runCatching { book.cues(chapter) }.getOrElse { emptyList() }
+    val jump = listenJump
+    val findAudio = mode == Mode.Listen && (!attached || jump != null)
+    val requestedIndex = location.index
+    val sectionAudio by key(book, chapter, findAudio, jump, audioRetry) {
+        produceState<SectionAudio>(SectionAudio.Loading) {
+            value = withContext(Dispatchers.IO) {
+                try {
+                    val index = if (findAudio) book.findNarratedSection(jump?.start ?: requestedIndex, jump?.direction ?: 1)
+                        else requestedIndex
+                    val cues = index?.let { book.cues(book.spine[it]) }.orEmpty()
+                    val duration = if (cues.isEmpty()) 0 else ChapterClock(cues).duration
+                    SectionAudio.Ready(index, cues, duration)
+                } catch (cancel: CancellationException) { throw cancel }
+                  catch (_: Exception) { SectionAudio.Failed }
+            }
         }
     }
-    val chapterCues = cues.orEmpty()
+    val readyAudio = sectionAudio as? SectionAudio.Ready
+    val chapterCues = readyAudio?.takeIf { it.index == location.index }?.cues.orEmpty()
+    LaunchedEffect(mode, findAudio, readyAudio, jump) {
+        if (mode != Mode.Listen || !findAudio || readyAudio == null) return@LaunchedEffect
+        val index = readyAudio.index
+        if (index != null && jump != null) {
+            go(index, jump.anchor.takeIf { index == jump.start }, continuePlaying = playing)
+        } else if (index != null && index != location.index) {
+            // Preparing a paused player is not reading activity and does not move server progress.
+            location = Location(index, revision = location.revision + 1)
+        }
+        if (jump != null) listenJump = null
+    }
     fun followAgain() {
         val anchor = if (attached) playback.anchor else lastAnchor
         val audible = (if (attached) playback.chapter else location.index).coerceIn(book.spine.indices)
@@ -372,8 +406,9 @@ internal fun BookReader(
     LaunchedEffect(highlightDelay) { playback.highlightDelay = highlightDelay }
     LaunchedEffect(speed) { if (playback.activeBook?.file == file) playback.changeSpeed(speed) }
     LaunchedEffect(playback.speed, attached) { if (attached && speed != playback.speed) speed = playback.speed }
-    LaunchedEffect(chapterFailed, audioError, mode, cues) {
-        if (chapterFailed || audioError || (mode == Mode.Follow && cues?.isEmpty() == true)) controls = true
+    LaunchedEffect(chapterFailed, audioError, mode, sectionAudio) {
+        if (chapterFailed || audioError || (mode == Mode.Follow && (sectionAudio == SectionAudio.Failed ||
+                readyAudio?.cues?.isEmpty() == true))) controls = true
     }
     LaunchedEffect(view, movement, location, mode) {
         if (mode != Mode.Read || view == null ||
@@ -524,18 +559,37 @@ internal fun BookReader(
                     val retry = displayed.copy(revision = displayed.revision + 1)
                     if (inspection != null) inspection = retry else location = retry
                 }) { Text(stringResource(R.string.stream_retry)) }
-                if (audioError) Text(stringResource(R.string.audio_error), Modifier.padding(horizontal = 16.dp))
-                else if (mode != Mode.Read && cues?.isEmpty() == true) {
+                if (mode != Mode.Read && sectionAudio == SectionAudio.Failed) {
+                    TextButton(onClick = {
+                        audioRetry++
+                        if (attached && playback.failed) playback.resume()
+                    }) { Text(stringResource(R.string.narration_retry)) }
+                } else if (audioError) {
+                    Text(stringResource(R.string.audio_error), Modifier.padding(horizontal = 16.dp))
+                } else if (mode == Mode.Listen && jump == null &&
+                    (if (attached) playback.noNarration else readyAudio != null && readyAudio.index == null)) {
+                    Text(stringResource(R.string.no_further_narration), Modifier.padding(horizontal = 16.dp))
+                } else if (mode == Mode.Follow && readyAudio?.cues?.isEmpty() == true) {
                     Text(stringResource(R.string.no_audio), Modifier.padding(horizontal = 16.dp))
                 }
+                val lookupInProgress = findAudio && sectionAudio == SectionAudio.Loading
+                val canGoBack = if (mode == Mode.Listen && attached) playback.canChapterBy(-1) else if (mode == Mode.Listen)
+                    (location.index - 1 downTo 0).any(book::mayHaveNarration) else displayed.index > 0
+                val canGoForward = if (mode == Mode.Listen && attached) playback.canChapterBy(1) else if (mode == Mode.Listen)
+                    (location.index + 1 until book.spine.size).any(book::mayHaveNarration) else displayed.index < book.spine.lastIndex
                 ReaderDock(
-                    mode, displayed.index, book.spine.size, playback.progress.takeIf { attached }, speed, playing, attached && playback.loading, chapterCues.isNotEmpty(),
+                    mode, displayed.index, canGoBack, canGoForward, playback.progress.takeIf { attached },
+                    readyAudio?.takeIf { it.index == location.index }?.durationMs ?: 0, speed, playing,
+                    (attached && playback.loading) || lookupInProgress,
+                    playing || (attached && (playback.progress != null || audioError)) || chapterCues.isNotEmpty(),
                     onPrevious = {
-                        if (mode == Mode.Listen) go(location.index - 1, continuePlaying = playing)
+                        if (mode == Mode.Listen && attached) playback.chapterBy(-1)
+                        else if (mode == Mode.Listen) listenJump = ListenJump(location.index - 1, -1)
                         else visit(ReaderTarget(displayed.index - 1))
                     },
                     onNext = {
-                        if (mode == Mode.Listen) go(location.index + 1, continuePlaying = playing)
+                        if (mode == Mode.Listen && attached) playback.chapterBy(1)
+                        else if (mode == Mode.Listen) listenJump = ListenJump(location.index + 1, 1)
                         else visit(ReaderTarget(displayed.index + 1))
                     },
                     onContents = { dialog = R.string.contents },
@@ -576,7 +630,11 @@ internal fun BookReader(
                         items(book.contents) { entry ->
                             val index = book.spine.indexOfFirst { it.path == entry.path }
                             TextButton(onClick = {
-                                if (mode == Mode.Listen) { captureVisible { history.add(it); go(index, entry.fragment, continuePlaying = playing) } }
+                                if (mode == Mode.Listen) {
+                                    captureVisible { history.add(it) }
+                                    if (attached) playback.selectChapter(index, entry.fragment)
+                                    else listenJump = ListenJump(index, 1, entry.fragment)
+                                }
                                 else visit(ReaderTarget(index, anchor = entry.fragment))
                                 dialog = null
                             }) {

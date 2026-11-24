@@ -134,8 +134,8 @@ class PlaybackService : Service() {
         }
         var actions = PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
             PlaybackState.ACTION_STOP or PlaybackState.ACTION_FAST_FORWARD or PlaybackState.ACTION_REWIND or PlaybackState.ACTION_SEEK_TO
-        if (player.chapter > 0) actions = actions or PlaybackState.ACTION_SKIP_TO_PREVIOUS
-        if (player.chapter < opened.publication.spine.lastIndex) actions = actions or PlaybackState.ACTION_SKIP_TO_NEXT
+        if (player.canChapterBy(-1)) actions = actions or PlaybackState.ACTION_SKIP_TO_PREVIOUS
+        if (player.canChapterBy(1)) actions = actions or PlaybackState.ACTION_SKIP_TO_NEXT
         session.setPlaybackState(PlaybackState.Builder().setActions(actions)
             .setState(state,progress?.elapsedMs?.toLong() ?: 0, if (state == PlaybackState.STATE_PLAYING) player.speed else 0f).build())
         if (!foreground && player.playing) promote()

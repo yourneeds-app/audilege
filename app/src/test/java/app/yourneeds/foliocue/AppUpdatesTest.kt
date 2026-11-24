@@ -24,4 +24,18 @@ class AppUpdatesTest {
         assertTrue(runCatching { parseRelease(release("v1.1.0", "other.apk")) }.isFailure)
         assertTrue(runCatching { parseRelease(release("v1.1.0", "Audilege-1.1.0.apk").put("prerelease", true)) }.isFailure)
     }
+
+    @Test fun readsIntegrityMetadataFromTheSelectedApk() {
+        val response = release("v1.2.0", "source.zip", "Audilege-1.2.0.apk")
+        val files = response.getJSONArray("assets")
+        files.getJSONObject(0).put("size", 300).put("digest", "sha256:" + "ab".repeat(32))
+        val apk = files.getJSONObject(1).put("size", 4200).put("digest", "sha256:" + "CC".repeat(32))
+        val parsed = parseRelease(response)
+        assertEquals(4200L, parsed.size)
+        assertEquals("cc".repeat(32), parsed.sha256)
+        apk.put("digest", JSONObject.NULL)
+        assertNull(parseRelease(response).sha256)
+        apk.put("digest", "sha256:corrupt")
+        assertTrue(runCatching { parseRelease(response) }.isFailure)
+    }
 }

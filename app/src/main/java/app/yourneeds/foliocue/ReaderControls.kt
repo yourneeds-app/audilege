@@ -112,7 +112,8 @@ private fun SkipButton(back: Boolean, enabled: Boolean) {
 
 @Composable
 internal fun ReaderDock(
-    mode: Mode, chapter: Int, chapterCount: Int, progress: TrackProgress?, speed: Float,
+    mode: Mode, chapter: Int, hasPrevious: Boolean, hasNext: Boolean, progress: TrackProgress?,
+    previewDurationMs: Int, speed: Float,
     playing: Boolean, loading: Boolean, audioAvailable: Boolean, onPrevious: () -> Unit,
     onNext: () -> Unit, onContents: () -> Unit, onSpeed: () -> Unit, onPlay: () -> Unit,
     onRepeat: (() -> Unit)? = null,
@@ -123,23 +124,23 @@ internal fun ReaderDock(
             Column(Modifier.widthIn(max = 600.dp).fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
                 if (mode == Mode.Listen) {
                     var drag by remember(chapter) { mutableStateOf<Float?>(null) }
-                    val duration = progress?.durationMs ?: 0
+                    val duration = progress?.durationMs ?: previewDurationMs
                     val position = drag?.roundToInt() ?: progress?.elapsedMs ?: 0
                     val label = stringResource(R.string.track_progress)
                     Slider(value = position.toFloat().coerceIn(0f,duration.toFloat()), onValueChange = { drag = it },
                         onValueChangeFinished = { drag?.let { AudilegePlayback.seekTo(it.roundToInt()) }; drag = null },
                         modifier = Modifier.fillMaxWidth().semantics { contentDescription = label },
-                        valueRange = 0f..duration.coerceAtLeast(1).toFloat(),enabled = duration > 0 && !loading)
+                        valueRange = 0f..duration.coerceAtLeast(1).toFloat(),enabled = progress != null && duration > 0 && !loading)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(clockLabel(position),style = MaterialTheme.typography.labelMedium)
-                        Text(clockLabel(duration),style = MaterialTheme.typography.labelMedium)
+                        Text(if (duration > 0) clockLabel(position) else "–:––",style = MaterialTheme.typography.labelMedium)
+                        Text(if (duration > 0) clockLabel(duration) else "–:––",style = MaterialTheme.typography.labelMedium)
                     }
                     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically) {
                         SkipButton(true, progress != null && !loading)
-                        ChapterButton(true,chapter > 0,onPrevious)
+                        ChapterButton(true,hasPrevious,onPrevious)
                         PlayControl(playing,loading,audioAvailable,true,onPlay)
-                        ChapterButton(false,chapter < chapterCount-1,onNext)
+                        ChapterButton(false,hasNext,onNext)
                         SkipButton(false, progress != null && !loading)
                     }
                     Row(Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -152,7 +153,7 @@ internal fun ReaderDock(
                     }
                 } else {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        ChapterButton(true,chapter > 0,onPrevious)
+                        ChapterButton(true,hasPrevious,onPrevious)
                         TextButton(onClick = onContents,modifier = Modifier.weight(1f)) {
                             Text(stringResource(R.string.audio_chapter,chapter + 1), textAlign = TextAlign.Center)
                         }
@@ -163,7 +164,7 @@ internal fun ReaderDock(
                             }
                             PlayControl(playing,loading,audioAvailable,false,onPlay)
                         }
-                        ChapterButton(false,chapter < chapterCount-1,onNext)
+                        ChapterButton(false,hasNext,onNext)
                     }
                 }
             }

@@ -8,8 +8,9 @@ Android-Reader für BookOrbit. EPUBs lesen, Hörbücher streamen und mit synchro
 - Die Bibliothek zeigt das zuletzt geöffnete Buch mit einer Fortsetzen-Aktion. Coverregal und Liste lassen sich umschalten. Die Suche berücksichtigt Titel und Autoren. Auf breiten Fenstern stehen Regal und gewählte Buchdetails nebeneinander.
 - Für BookOrbit-Bücher starten **Lesen**, **Hören** und **Mitlesen** direkt vom Server, soweit das EPUB die jeweilige Funktion unterstützt. **Offline speichern** legt eine lokale Kopie an. Diese lässt sich unter **Downloads** öffnen oder entfernen.
 - Beim Lesen und Mitlesen blendet ein Tipp auf den Text die Bedienleisten ein. Unter **Aa** lassen sich Schrift, Schriftgröße, Zeilenabstand, Ränder, Papier und Mitlesemarkierung mit Vorschau einstellen. Buchsuche, Inhaltsverzeichnis und Lesezeichen helfen beim Springen zwischen Passagen.
-- Beim Hören stehen Kapitel, Zeitsprünge, Tempo und Schlaftimer zur Verfügung. Die Wiedergabe lässt sich über den Miniplayer, verbundene Kopfhörer und die Android-Mediensteuerung bedienen.
+- Beim Hören stehen Kapitel, Zeitsprünge, Tempo und Schlaftimer zur Verfügung. Audilege überspringt unvertönte Einstiegsseiten und springt beim Kapitelwechsel zum nächsten vertonten Abschnitt in der gewählten Richtung. Die Wiedergabe lässt sich über den Miniplayer, verbundene Kopfhörer und die Android-Mediensteuerung bedienen.
 - Das Hamburger-Menü öffnet die **Einstellungen**. Hier lassen sich unter anderem Sprache (Deutsch oder Englisch), App- und Akzentfarben, die Übernahme einer Coverfarbe sowie die automatische Updateprüfung wählen.
+- Unter **Einstellungen → App-Updates** lädt **Update herunterladen und installieren** die neue APK direkt in Audilege. Android zeigt anschließend die Installationsbestätigung an. Bei der ersten Installation aus Audilege kann Android eine Freigabe für diese Installationsquelle verlangen.
 
 ## Server und EPUB
 

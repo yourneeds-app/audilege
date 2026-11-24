@@ -28,19 +28,23 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
 import java.text.DateFormat
 import java.util.Date
 
 internal const val RELEASES = "https://github.com/yourneeds-app/audilege/releases"
-internal data class Release(val version: String, val link: String)
+internal data class Release(val version: String, val link: String, val size: Long = -1, val sha256: String? = null)
 private class ReleaseHttpError(val status: Int) : Exception()
 private const val AUTO_INTERVAL = 6 * 60 * 60 * 1000L
 private val versionPattern = Regex("""\d+\.\d+\.\d+""")
@@ -50,9 +54,15 @@ internal fun parseRelease(response: JSONObject): Release {
     val version = tag.removePrefix("v")
     require(version.matches(versionPattern) && !response.optBoolean("draft") && !response.optBoolean("prerelease"))
     val assets = response.getJSONArray("assets")
-    val names = (0 until assets.length()).mapNotNull { assets.optJSONObject(it)?.optString("name") }
-    val file = listOf("Audilege-$version.apk", "Audilege-$version-release.apk", "Audilege-$version-debug.apk").first { it in names }
-    return Release(version, "$RELEASES/download/$tag/$file")
+    val byName = (0 until assets.length()).mapNotNull { assets.optJSONObject(it) }.associateBy { it.optString("name") }
+    val file = listOf("Audilege-$version.apk", "Audilege-$version-release.apk", "Audilege-$version-debug.apk").first { it in byName }
+    val asset = byName.getValue(file)
+    val checksum = if (asset.isNull("digest")) null else {
+        val value = asset.getString("digest")
+        require(value.matches(Regex("""sha256:[0-9a-fA-F]{64}""")))
+        value.substringAfter(':').lowercase()
+    }
+    return Release(version, "$RELEASES/download/$tag/$file", asset.optLong("size", -1), checksum)
 }
 
 private fun fetchRelease(token: String): Release {
@@ -97,12 +107,21 @@ internal class AppUpdates(
         private set
     var available by mutableStateOf<Release?>(null)
         private set
+    var downloading by mutableStateOf(false)
+        private set
+    var progress by mutableStateOf<Int?>(null)
+        private set
+    var readyApk by mutableStateOf<File?>(null)
+        private set
 
     init {
         val version = prefs.getString("updateVersion", null)
         val link = prefs.getString("updateLink", null)
         if (version != null && link != null && newerVersion(version, installed) && link.startsWith("$RELEASES/")) {
-            available = Release(version, link)
+            available = Release(version, link, prefs.getLong("updateSize", -1), prefs.getString("updateSha256", null))
+            if (link == prefs.getString("updateReadyFor", null)) {
+                readyApk = prefs.getString("updateReadyPath", null)?.let(::File)?.takeIf { it.isFile }
+            }
         }
     }
 
@@ -113,7 +132,7 @@ internal class AppUpdates(
     }
 
     fun check(candidate: String = token, automatic: Boolean = false) {
-        if (checking) return
+        if (checking || downloading) return
         val now = System.currentTimeMillis()
         if (automatic && (!automaticEnabled || now - lastCheck in 0L until AUTO_INTERVAL)) return
         checking = true
@@ -131,10 +150,13 @@ internal class AppUpdates(
                 }
                 token = candidate
                 configured = candidate.isNotBlank()
-                available = release.takeIf { newerVersion(it.version, installed) }
+                val next = release.takeIf { newerVersion(it.version, installed) }
+                if (available != next) clearPrepared()
+                available = next
                 lastCheck = System.currentTimeMillis()
                 prefs.edit().putLong("updateLastSuccess", lastCheck).putString("updateVersion", release.version)
-                    .putString("updateLink", release.link).apply()
+                    .putString("updateLink", release.link).putLong("updateSize", release.size)
+                    .putString("updateSha256", release.sha256).apply()
                 if (available == null) status = R.string.up_to_date
             } catch (failure: CancellationException) {
                 throw failure
@@ -151,8 +173,58 @@ internal class AppUpdates(
         }
     }
 
+    private fun clearPrepared() {
+        readyApk = null
+        prefs.edit().remove("updateReadyFor").remove("updateReadyPath").apply()
+    }
+
+    fun prepare(context: Context, release: Release) {
+        if (checking || downloading || release != available) return
+        val app = context.applicationContext
+        downloading = true
+        progress = null
+        status = null
+        scope.launch {
+            try {
+                val apk = UpdateInstaller.download(app, release) { progress = it }
+                readyApk = apk
+                prefs.edit().putString("updateReadyFor", release.link).putString("updateReadyPath", apk.absolutePath).apply()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                clearPrepared()
+                status = R.string.update_download_failed
+            } finally { downloading = false }
+        }
+    }
+
+    fun openInstaller(context: Context, apk: File) {
+        if (!apk.isFile) {
+            clearPrepared()
+            status = R.string.update_file_missing
+            return
+        }
+        try {
+            UpdateInstaller.install(context, apk)
+            status = null
+        } catch (_: Exception) {
+            status = R.string.update_install_failed
+        }
+    }
+
+    fun requestInstallPermission(context: Context): Boolean {
+        return try {
+            UpdateInstaller.requestPermission(context)
+            status = null
+            true
+        } catch (_: Exception) {
+            status = R.string.update_install_failed
+            false
+        }
+    }
+
     fun clearAccess() {
-        if (checking) return
+        if (checking || downloading) return
         checking = true
         scope.launch {
             try {
@@ -195,6 +267,70 @@ private fun ToggleRow(title: Int, selected: Boolean, choose: (Boolean) -> Unit) 
         verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(title), Modifier.weight(1f))
         Switch(checked = selected, onCheckedChange = null)
+    }
+}
+
+@Composable
+private fun AvailableUpdate(updates: AppUpdates, release: Release) {
+    val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var resumed by remember(lifecycle) { mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
+    var allowed by remember(context) { mutableStateOf(UpdateInstaller.canInstall(context)) }
+    var installAfterDownload by remember(release) { mutableStateOf(false) }
+    var awaitingPermission by rememberSaveable(release.link) { mutableStateOf(false) }
+    var leftForPermission by rememberSaveable(release.link) { mutableStateOf(false) }
+    fun prepareToInstall() {
+        if (updates.checking || updates.downloading) return
+        installAfterDownload = true
+        updates.prepare(context, release)
+    }
+    DisposableEffect(lifecycle, context, release) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                allowed = UpdateInstaller.canInstall(context)
+                resumed = true
+                if (awaitingPermission && leftForPermission) {
+                    awaitingPermission = false
+                    leftForPermission = false
+                    if (allowed) prepareToInstall()
+                }
+            } else if (event == Lifecycle.Event.ON_PAUSE) {
+                resumed = false
+                if (awaitingPermission) leftForPermission = true
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    val apk = updates.readyApk
+    LaunchedEffect(installAfterDownload, updates.downloading, resumed, apk) {
+        if (resumed && installAfterDownload && !updates.downloading) {
+            installAfterDownload = false
+            if (apk != null && allowed) updates.openInstaller(context, apk)
+        }
+    }
+    Text(stringResource(R.string.release_available, release.version))
+    when {
+        updates.downloading -> {
+            val progress = updates.progress
+            if (progress == null) {
+                Text(stringResource(R.string.update_downloading))
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+            } else {
+                Text(stringResource(R.string.update_download_progress, progress))
+                LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth())
+            }
+        }
+        apk == null -> Button(enabled = !updates.checking, onClick = ::prepareToInstall) { Text(stringResource(R.string.update_download)) }
+        !allowed -> {
+            Text(stringResource(R.string.update_source_permission))
+            Button(enabled = !updates.checking, onClick = {
+                awaitingPermission = true
+                leftForPermission = false
+                if (!updates.requestInstallPermission(context)) awaitingPermission = false
+            }) { Text(stringResource(R.string.update_allow_install)) }
+        }
+        else -> Button(enabled = !updates.checking, onClick = ::prepareToInstall) { Text(stringResource(R.string.update_install)) }
     }
 }
 
@@ -262,19 +398,23 @@ internal fun SettingsScreen(
                         .format(Date(updates.lastCheck)) else stringResource(R.string.design_never)
                     Text(stringResource(R.string.design_last_check, last), style = MaterialTheme.typography.bodyMedium)
                     ToggleRow(R.string.design_auto_updates, updates.automaticEnabled, updates::configureAutomatic)
-                    Button(enabled = !updates.checking, onClick = { updates.check() }) { Text(stringResource(R.string.check_updates)) }
+                    OutlinedButton(enabled = !updates.checking && !updates.downloading, onClick = { updates.check() }) {
+                        Text(stringResource(R.string.check_updates))
+                    }
                     if (updates.checking) LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Column(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
-                        updates.available?.let { release ->
-                            Text(stringResource(R.string.release_available, release.version))
-                            OutlinedButton(onClick = { open(release.link) }) { Text(stringResource(R.string.open_update)) }
+                    updates.available?.let { release ->
+                        AvailableUpdate(updates, release)
+                        if (updates.status == R.string.update_download_failed || updates.status == R.string.update_install_failed) {
+                            TextButton(onClick = { open(release.link) }) { Text(stringResource(R.string.open_update)) }
                         }
+                    }
+                    Column(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
                         updates.status?.let { Text(stringResource(it)) }
                         if (browserFailed) Text(stringResource(R.string.update_error))
                     }
                     TextButton(onClick = { open("$RELEASES/latest") }) { Text(stringResource(R.string.open_releases)) }
                     if (updates.configured || updates.status == R.string.design_release_missing || updates.status == R.string.update_access) {
-                        TextButton(enabled = !updates.checking, onClick = { accessDialog = true }) {
+                        TextButton(enabled = !updates.checking && !updates.downloading, onClick = { accessDialog = true }) {
                             Text(stringResource(R.string.design_private_access))
                         }
                     }
