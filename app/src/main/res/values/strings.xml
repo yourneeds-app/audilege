@@ -138,19 +138,12 @@
     <string name="listening_statistics">Listening statistics</string>
     <string name="statistics_local_hint">Recorded on this device, separately for each profile. Listening statistics are not synced between devices. Only activity recorded by Audilege is included.</string>
     <string name="statistics_total">Total listening time</string>
-    <string name="statistics_today">Today</string>
-    <string name="statistics_week">Last 7 days</string>
-    <string name="statistics_streak">Current streak</string>
     <string name="statistics_best_streak">Best streak</string>
     <string name="statistics_streak_hint">Consecutive days with at least one minute of listening. You can continue yesterday’s streak today.</string>
-    <string name="statistics_books">Listening time by book</string>
-    <string name="statistics_empty">Start listening to see your first entry here.</string>
     <string name="statistics_seconds">%1$d s</string>
     <string name="statistics_minutes">%1$d m</string>
     <string name="statistics_hours_minutes">%1$d h %2$d m</string>
     <string name="statistics_chart">Your listening time</string>
-    <string name="statistics_daily">7 days</string>
-    <string name="statistics_weekly">4 weeks</string>
     <string name="statistics_chart_empty">Listening time will appear here as you listen.</string>
     <string name="statistics_chart_hint">Tap a bar to see its listening time.</string>
     <string name="license_sender">AirPlay sender · Apache 2.0</string>
@@ -173,4 +166,27 @@
     <string name="statistics_sync_pending">Waiting for the first sync with BookOrbit.</string>
     <string name="statistics_sync_collected">More listening time is being collected or waiting to upload. BookOrbit accepts sessions of at least 10 seconds.</string>
     <string name="statistics_sync_now">Sync now</string>
+    <string name="statistics_period_week">Week</string>
+    <string name="statistics_period_month">Month</string>
+    <string name="statistics_period_year">Year</string>
+    <string name="statistics_period_all">All time</string>
+    <string name="statistics_year_recap">Your %1$d in listening</string>
+    <string name="statistics_previous_period">Previous period</string>
+    <string name="statistics_next_period">Next period</string>
+    <string name="statistics_active_days">Active days</string>
+    <string name="statistics_heard_books">Books listened to</string>
+    <string name="statistics_daily_average">Daily Ø</string>
+    <plurals name="statistics_current_streak_days">
+        <item quantity="one">Current streak: %1$d day</item>
+        <item quantity="other">Current streak: %1$d days</item>
+    </plurals>
+    <string name="statistics_period_time">Listening time in this period</string>
+    <string name="statistics_minimum_count">%1$d+</string>
+    <string name="statistics_peak">Your busiest period</string>
+    <string name="statistics_top_books">Your top books</string>
+    <string name="statistics_top_authors">Your top authors</string>
+    <string name="statistics_undated_books">Earlier local book totals have no dates. They remain under All time and cannot be assigned to a month or year. Refresh BookOrbit to load dated server history.</string>
+    <string name="statistics_period_empty">No dated listening activity for this period yet.</string>
+    <string name="statistics_show_all_books">Show all books</string>
+    <string name="statistics_show_top_five">Show top 5</string>
 </resources>

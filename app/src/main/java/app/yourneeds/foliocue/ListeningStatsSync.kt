@@ -57,6 +57,8 @@ internal fun addStatisticsWindow(data: JSONObject, bookId: Long, title: String, 
                                  start: Long, end: Long, millis: Long, zone: ZoneId = ZoneId.systemDefault()) {
     if (millis <= 0 || end <= start || millis > end - start) return
     val days = data.optJSONObject("days") ?: JSONObject().also { data.put("days", it) }
+    val book = data.objectAt("books").objectAt("orbit:$bookId")
+    val bookDays = book.objectAt("days")
     var cursor = start
     var counted = 0L
     while (cursor < end) {
@@ -65,12 +67,10 @@ internal fun addStatisticsWindow(data: JSONObject, bookId: Long, title: String, 
         val cumulative = if (until == end) millis else (millis.toDouble() * (until - start) / (end - start)).toLong()
         val part = cumulative - counted
         days.put(day.toString(), days.optLong(day.toString()) + part)
+        bookDays.put(day.toString(), bookDays.optLong(day.toString()) + part)
         counted = cumulative
         cursor = until
     }
-    val books = data.optJSONObject("books") ?: JSONObject().also { data.put("books", it) }
-    val key = "orbit:$bookId"
-    val book = books.optJSONObject(key) ?: JSONObject().also { books.put(key, it) }
     book.put("title", title).put("author", author).put("millis", book.optLong("millis") + millis)
 }
 
@@ -81,7 +81,13 @@ internal fun mergeStatistics(target: JSONObject, source: JSONObject) {
     source.optJSONObject("books")?.let { from -> from.keys().forEach { key ->
         val item = from.getJSONObject(key)
         val existing = books.optJSONObject(key)
-        books.put(key, JSONObject(item.toString()).put("millis", (existing?.optLong("millis") ?: 0) + item.getLong("millis")))
+        val merged = JSONObject(item.toString()).put("millis", (existing?.optLong("millis") ?: 0) + item.getLong("millis"))
+        val dates = JSONObject(existing?.optJSONObject("days")?.toString() ?: "{}")
+        item.optJSONObject("days")?.let { sourceDays -> sourceDays.keys().forEach { day ->
+            dates.put(day, dates.optLong(day) + sourceDays.getLong(day))
+        } }
+        merged.put("days", dates)
+        books.put(key, merged)
     } }
 }
 

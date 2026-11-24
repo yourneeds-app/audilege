@@ -138,19 +138,12 @@
     <string name="listening_statistics">Hörstatistik</string>
     <string name="statistics_local_hint">Auf diesem Gerät erfasst, getrennt nach Profil. Hörstatistiken werden nicht zwischen Geräten synchronisiert. Enthalten ist nur die von Audilege erfasste Hörzeit.</string>
     <string name="statistics_total">Gesamte Hörzeit</string>
-    <string name="statistics_today">Heute</string>
-    <string name="statistics_week">Letzte 7 Tage</string>
-    <string name="statistics_streak">Aktueller Streak</string>
     <string name="statistics_best_streak">Bester Streak</string>
     <string name="statistics_streak_hint">Aufeinanderfolgende Tage mit mindestens einer Minute Hörzeit. Den Streak von gestern kannst du heute fortsetzen.</string>
-    <string name="statistics_books">Hörzeit je Buch</string>
-    <string name="statistics_empty">Starte ein Hörbuch, um hier deinen ersten Eintrag zu sehen.</string>
     <string name="statistics_seconds">%1$d s</string>
     <string name="statistics_minutes">%1$d m</string>
     <string name="statistics_hours_minutes">%1$d h %2$d m</string>
     <string name="statistics_chart">Deine Hörzeit</string>
-    <string name="statistics_daily">7 Tage</string>
-    <string name="statistics_weekly">4 Wochen</string>
     <string name="statistics_chart_empty">Hier erscheint deine Hörzeit, sobald du hörst.</string>
     <string name="statistics_chart_hint">Tippe auf eine Säule, um ihre Hörzeit zu sehen.</string>
     <string name="license_sender">AirPlay-Sender · Apache 2.0</string>
@@ -173,4 +166,27 @@
     <string name="statistics_sync_pending">Wartet auf den ersten Abgleich mit BookOrbit.</string>
     <string name="statistics_sync_collected">Weitere Hörzeit wird gesammelt oder wartet auf die Übertragung. BookOrbit übernimmt Sitzungen ab 10 Sekunden.</string>
     <string name="statistics_sync_now">Jetzt abgleichen</string>
+    <string name="statistics_period_week">Woche</string>
+    <string name="statistics_period_month">Monat</string>
+    <string name="statistics_period_year">Jahr</string>
+    <string name="statistics_period_all">Gesamt</string>
+    <string name="statistics_year_recap">Dein Hörjahr %1$d</string>
+    <string name="statistics_previous_period">Vorheriger Zeitraum</string>
+    <string name="statistics_next_period">Nächster Zeitraum</string>
+    <string name="statistics_active_days">Aktive Tage</string>
+    <string name="statistics_heard_books">Gehörte Bücher</string>
+    <string name="statistics_daily_average">Täglicher Ø</string>
+    <plurals name="statistics_current_streak_days">
+        <item quantity="one">Aktueller Streak: %1$d Tag</item>
+        <item quantity="other">Aktueller Streak: %1$d Tage</item>
+    </plurals>
+    <string name="statistics_period_time">Hörzeit im Zeitraum</string>
+    <string name="statistics_minimum_count">%1$d+</string>
+    <string name="statistics_peak">Deine aktivste Zeit</string>
+    <string name="statistics_top_books">Deine Top-Bücher</string>
+    <string name="statistics_top_authors">Deine Top-Autoren</string>
+    <string name="statistics_undated_books">Ältere lokale Buchsummen haben kein Datum. Sie bleiben unter Gesamt erhalten und lassen sich keinem Monat oder Jahr zuordnen. Aktualisiere BookOrbit, um datierte Serverhistorie zu laden.</string>
+    <string name="statistics_period_empty">Für diesen Zeitraum ist noch keine datierte Hörzeit vorhanden.</string>
+    <string name="statistics_show_all_books">Alle Bücher anzeigen</string>
+    <string name="statistics_show_top_five">Top 5 anzeigen</string>
 </resources>
