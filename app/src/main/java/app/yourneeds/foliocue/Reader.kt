@@ -45,8 +45,9 @@ internal class ReaderPage(
     var onTurnAtEdge: (Int) -> Unit = {}
     var onPageError: () -> Unit = {}
     private var css = ""
-    private var currentMark: String? = null
-    private var submittedMark: String? = null
+    private data class Mark(val anchor: String?, val sentence: Boolean)
+    private var currentMark = Mark(null, false)
+    private var submittedMark: Mark? = null
     private var markInFlight = false
     private var closed = false
     private var readyToShow: (() -> Unit)? = null
@@ -116,6 +117,8 @@ internal class ReaderPage(
             }
 
             override fun onPageFinished(view: WebView, url: String) {
+                evaluateJavascript(context.assets.open("reader-highlight.js").bufferedReader().use { it.readText() }, null)
+                submittedMark = null
                 applyAppearance()
                 postVisualStateCallback(0, object : VisualStateCallback() {
                     override fun onComplete(requestId: Long) {
@@ -189,6 +192,9 @@ internal class ReaderPage(
             .foliocue-current {
                 $paint border-radius: 0.16em;
                 box-decoration-break: clone; -webkit-box-decoration-break: clone;
+            }
+            ::highlight(audilege-sentence) {
+                ${if (style.underline) "text-decoration: underline 0.14em $markInk;" else "background-color: $mark; color: $markInk;"}
             }
             $face
         """.trimIndent()
@@ -314,8 +320,8 @@ internal class ReaderPage(
         evaluateJavascript("document.getElementById(${JSONObject.quote(id)})?.scrollIntoView()", null)
     }
 
-    fun highlight(id: String?) {
-        currentMark = id
+    fun highlight(id: String?, sentence: Boolean = false) {
+        currentMark = Mark(id, sentence)
         flushHighlight()
     }
 
@@ -323,22 +329,8 @@ internal class ReaderPage(
         if (closed || !initialized || markInFlight || currentMark == submittedMark) return
         submittedMark = currentMark
         markInFlight = true
-        val target = submittedMark?.let(JSONObject::quote) ?: "null"
-        evaluateJavascript("""
-            (() => {
-                window.audilegeMark?.classList.remove('foliocue-current');
-                const id = $target;
-                const word = id === null ? null : document.getElementById(id);
-                window.audilegeMark = word;
-                if (!word) return;
-                const box = word.getBoundingClientRect();
-                word.classList.add('foliocue-current');
-                const margin = Math.min(60, innerHeight * 0.18);
-                if ($followAudio && (box.top < margin || box.bottom > innerHeight - margin)) {
-                    word.scrollIntoView({behavior: 'instant', block: 'center', inline: 'nearest'});
-                }
-            })()
-        """.trimIndent()) {
+        val target = currentMark.anchor?.let(JSONObject::quote) ?: "null"
+        evaluateJavascript("window.audilegeHighlight?.($target, ${currentMark.sentence}, $followAudio)") {
             markInFlight = false
             flushHighlight()
         }

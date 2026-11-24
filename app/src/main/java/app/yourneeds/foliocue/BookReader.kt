@@ -105,6 +105,7 @@ internal fun BookReader(
     var marks by remember(bookKey) { mutableStateOf(bookmarks.load().filter { it.chapter in book.spine.indices }) }
     var selectedPassage by remember { mutableStateOf<Pair<Int, PagePassage>?>(null) }
     var highlightDelay by remember { mutableIntStateOf(prefs.getInt("$bookKey.highlightDelay", 0).coerceIn(-1500, 1500)) }
+    var sentenceMark by remember { mutableStateOf(prefs.getBoolean("highlightSentence", false)) }
     var speed by remember { mutableFloatStateOf(prefs.getFloat("speed", 1f).coerceIn(0.75f, 2f)) }
     var controls by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<Int?>(null) }
@@ -445,9 +446,9 @@ internal fun BookReader(
             location = Location(playback.chapter, playback.anchor, location.revision + 1)
         }
     }
-    LaunchedEffect(view, mode, attached, displayed.index, location.index) {
+    LaunchedEffect(view, mode, attached, displayed.index, location.index, sentenceMark) {
         snapshotFlow { playback.marker }.collect { fragment ->
-            if (attached && mode == Mode.Follow && displayed.index == location.index) view?.highlight(fragment)
+            if (attached && mode == Mode.Follow && displayed.index == location.index) view?.highlight(fragment, sentenceMark)
             else view?.highlight(null)
             if (attached) playback.anchor?.let { lastAnchor = it }
         }
@@ -725,6 +726,11 @@ internal fun BookReader(
                     }
                 } else if (title == R.string.sync_timing) {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
+                        Choice(stringResource(R.string.highlight_unit), listOf(R.string.highlight_word, R.string.highlight_sentence),
+                            if (sentenceMark) 1 else 0) { selected ->
+                            sentenceMark = selected == 1
+                            prefs.edit().putBoolean("highlightSentence", sentenceMark).apply()
+                        }
                         Text(stringResource(R.string.sync_timing_hint))
                         Text(stringResource(R.string.sync_timing_value, highlightDelay), Modifier.padding(top = 8.dp))
                         fun changeTiming(value: Int) {

@@ -1,10 +1,13 @@
 # Audilege
 
-Audilege is an Android reader and audiobook player for [BookOrbit](https://bookorbit.app/). Stream books from your server, read along with synchronized text highlighting, and resume from the same passage on another device.
+Audilege is an Android reader and audiobook player for Audilege Server and [BookOrbit](https://bookorbit.app/). Stream books from your server, read along with synchronized text highlighting, and resume from the same passage on another device.
 
 [Download the latest Android release](https://github.com/yourneeds-app/audilege/releases/latest)
 
 ## Getting started
+
+- With Audilege Server, choose the existing account sign-in option and enter your own server address and Audilege Server credentials.
+- While reading along, open **Read-along settings → Highlight text** to choose **Word** or **Sentence**. Word-level timing comes from the book's audio overlays. Audilege remembers your preference.
 
 - Add your BookOrbit server under **Profile → Add profile** and sign in with your existing account. Audilege stores session tokens in encrypted storage and refreshes them when needed. Existing OPDS profiles and **Connect via OPDS** are also supported.
 - Above **My books**, swipe through **Continue reading** and tap a book to resume at its saved position. This shelf includes unfinished local books and supported EPUBs in your BookOrbit account. Browse the full library as a cover grid or a list, or search by title or author. On wide screens, the library and book details appear side by side.

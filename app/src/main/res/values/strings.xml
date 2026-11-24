@@ -124,7 +124,10 @@
     <string name="update_token_save">Save and check</string>
     <string name="update_token_remove">Remove saved access</string>
     <string name="material_display">Appearance</string>
-    <string name="sync_timing">Read-along timing</string>
+    <string name="sync_timing">Read-along settings</string>
+    <string name="highlight_unit">Highlight text</string>
+    <string name="highlight_word">Word</string>
+    <string name="highlight_sentence">Sentence</string>
     <string name="sync_timing_hint">Move the highlight earlier or later for this book. The audio keeps playing at the same position.</string>
     <string name="sync_timing_value">Highlight offset: %1$+d ms</string>
     <string name="reset_timing">Reset timing</string>
