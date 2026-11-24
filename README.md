@@ -1,46 +1,53 @@
 # Audilege
 
-Android-Reader für BookOrbit. EPUBs lesen, Hörbücher streamen und mit synchroner Textmarkierung mitlesen. Der Lesestand wird mit dem Server abgeglichen.
+Audilege is an Android reader and audiobook player for [BookOrbit](https://bookorbit.app/). Stream books from your server, read along with synchronized text highlighting, and resume from the same passage on another device.
 
-## Bedienung
+[Download the latest Android release](https://github.com/yourneeds-app/audilege/releases/latest)
 
-- Unter **Profil → Profil hinzufügen** die BookOrbit-Adresse und die Zugangsdaten des bestehenden Kontos eingeben. Der Profilname ist optional. Audilege speichert die Sitzungstokens verschlüsselt und erneuert sie bei Bedarf. Vorhandene OPDS-Profile und **Mit OPDS verbinden** sind ebenfalls verfügbar.
-- Die Bibliothek zeigt das zuletzt geöffnete Buch mit einer Fortsetzen-Aktion. Coverregal und Liste lassen sich umschalten. Die Suche berücksichtigt Titel und Autoren. Auf breiten Fenstern stehen Regal und gewählte Buchdetails nebeneinander.
-- Für BookOrbit-Bücher starten **Lesen**, **Hören** und **Mitlesen** direkt vom Server, soweit das EPUB die jeweilige Funktion unterstützt. **Offline speichern** legt eine lokale Kopie an. Diese lässt sich unter **Downloads** öffnen oder entfernen.
-- Beim Lesen und Mitlesen blendet ein Tipp auf den Text die Bedienleisten ein. Unter **Aa** lassen sich Schrift, Schriftgröße, Zeilenabstand, Ränder, Papier und Mitlesemarkierung mit Vorschau einstellen. Buchsuche, Inhaltsverzeichnis und Lesezeichen helfen beim Springen zwischen Passagen.
-- Beim Hören stehen Kapitel, Zeitsprünge, Tempo und Schlaftimer zur Verfügung. Audilege überspringt unvertönte Einstiegsseiten und springt beim Kapitelwechsel zum nächsten vertonten Abschnitt in der gewählten Richtung. Die Wiedergabe lässt sich über den Miniplayer, verbundene Kopfhörer und die Android-Mediensteuerung bedienen.
-- Das Hamburger-Menü öffnet die **Einstellungen**. Hier lassen sich unter anderem Sprache (Deutsch oder Englisch), App- und Akzentfarben, die Übernahme einer Coverfarbe sowie die automatische Updateprüfung wählen.
-- Unter **Einstellungen → App-Updates** lädt **Update herunterladen und installieren** die neue APK direkt in Audilege. Android zeigt anschließend die Installationsbestätigung an. Bei der ersten Installation aus Audilege kann Android eine Freigabe für diese Installationsquelle verlangen.
+## Getting started
 
-## Server und EPUB
+- Add your BookOrbit server under **Profile → Add profile** and sign in with your existing account. Audilege stores session tokens in encrypted storage and refreshes them when needed. Existing OPDS profiles and **Connect via OPDS** are also supported.
+- Browse the library as a cover grid or a list, search by title or author, and resume the last book you opened. On tablets and other wide screens, the library and book details appear side by side.
+- Choose **Read**, **Listen**, or **Read along** on the book details screen. For compatible BookOrbit books, all three modes can start from the server. Use **Save offline** to keep a copy that can be opened or removed under **Downloads**.
+- Tap the page to show the controls. Under **Aa**, adjust the font, size, line spacing, margins, paper color, and read-along highlighting. Use the table of contents, search, and bookmarks to move between passages.
+- In **Listen**, use the chapter controls, time jumps, playback speed, and sleep timer. Audilege skips text-only sections during playback. The mini-player, connected headphones, and Android media controls can also control playback.
+- Open **Settings** from the menu to choose English or German, adjust the theme and accent color, enable cover-based colors, and manage update checks.
 
-Die BookOrbit-Anmeldung verwendet die Konto-API. Den Reader versorgen die EPUB-Ressourcen- und Media-Overlay-Routen. Die Download-Route wird beim ausdrücklichen Speichern einer Offline-Kopie verwendet. Audilege bevorzugt ein EPUB mit Media Overlays. OPDS bleibt für Katalog und explizite Offline-Downloads verfügbar. HTTPS ist der Standard. Lokales HTTP wird pro Profil freigegeben.
+## Updates
 
-Unterstützt sind DRM-freie EPUBs mit XHTML-Text und optionalen EPUB-3-Media-Overlays. Die Markierung folgt den Zeitmarken der jeweiligen Ausgabe. BookOrbit-Lesestände werden pro Konto und EPUB-Datei geladen und gespeichert. Ausstehende Änderungen werden lokal gemerkt. Bei konkurrierenden Änderungen bietet der Reader beide Lesestände zur Auswahl. Der Player unterstützt Hintergrundwiedergabe über einen Android-Mediendienst. Für Festlayout-EPUBs gibt es keinen eigenen Darstellungsmodus.
+Starting with Audilege 0.4.2, choose **Settings → App updates → Download and install update**. Audilege downloads and checks the APK, then opens the Android installation confirmation. Android may ask for permission the first time you install an update through Audilege.
+
+If you are using Audilege 0.4.1 or earlier, download the latest APK from GitHub Releases and install it over your existing copy. The APK uses the same package ID and signing certificate.
+
+## BookOrbit and EPUB support
+
+Audilege signs in through the BookOrbit account API. It uses the server's EPUB resource and media-overlay endpoints for streaming and the download endpoint when you request an offline copy. If a book has several editions, Audilege prefers an EPUB with media overlays. OPDS supports catalog browsing and offline downloads. HTTPS is the default. You can enable local HTTP for individual profiles.
+
+Audilege supports DRM-free EPUBs with XHTML text and optional EPUB 3 media overlays. Highlighting follows the timing marks in each edition. Reading and listening positions sync per BookOrbit account and EPUB edition. Audilege stores pending changes locally and lets you choose which position to keep when devices report conflicting changes. Android provides background playback through the media service. Fixed-layout EPUBs use the standard reader view.
 
 ## AirPlay 2
 
-Im Modus **Hören** öffnet das Lautsprechersymbol die Audioausgabe. Einen kompatiblen AirPlay-2-Empfänger im selben WLAN auswählen. Das Handy streamt den Ton vom Server oder spielt eine gespeicherte Ausgabe ab. Die Verbindung zu BookOrbit verwaltet das Handy. Der Lautsprecher erhält den Ton.
+In **Listen**, tap the audio output icon and select a compatible AirPlay 2 receiver on the same Wi-Fi network. Audilege plays audio from BookOrbit or an offline copy and sends it to the receiver.
 
-Ab Android 11 bietet Audilege die gefundenen Lautsprecher auch in der Ausgabeauswahl seiner Android-Medienkachel an. Gerät und Lautstärke lassen sich dort während einer Hörsitzung wechseln. Die Darstellung der Kachel in den Schnelleinstellungen und auf dem Sperrbildschirm richtet sich nach der Android-Oberfläche und den Geräteeinstellungen.
+On Android 11 and later, available receivers also appear in the Audilege media card's output picker. The card can switch devices and adjust volume during a listening session. Availability on the lock screen and in Quick Settings depends on the Android device.
 
-Audilege schätzt die hörbare Stelle anhand der übertragenen Audiodaten und der Pufferzeit. Beim Wechsel von AirPlay zu **Lesen** oder **Mitlesen** pausiert die Wiedergabe an dieser Stelle. Eine Verbindungsunterbrechung pausiert ebenfalls. Audilege ordnet die Hörposition über die Zeitmarken des EPUB der passenden Textstelle zu. Der Abgleich mit anderen Geräten erfordert ein BookOrbit-Kontoprofil. Die Lizenztexte des Senders stehen in der Audioauswahl.
+Audilege estimates the current listening position from the stream and its buffering delay. When you switch from AirPlay to **Read** or **Read along**, Audilege pauses playback and opens the corresponding passage. A lost connection also pauses playback. A BookOrbit account profile is required to sync between devices. The audio output picker includes the sender's license notices.
 
-## Bauen und prüfen
+## Build and test
 
-Projektordner in Android Studio öffnen. JDK 17 oder 21, Android SDK 35 und Gradle 8.14 verwenden.
+Open the project in Android Studio with JDK 17 or 21, Android SDK 35, and Gradle 8.14.
 
-```text
+```sh
 gradle testDebugUnitTest assembleDebug lintDebug
 ```
 
-- OPDS: [BookOrbit-Dokumentation](https://bookorbit.app/opds/)
-- Medienüberlagerungen: [EPUB 3.3](https://www.w3.org/TR/epub-33/)
-- Audioauswahl: [Android Media Routing](https://developer.android.com/media/routing)
+- [BookOrbit OPDS documentation](https://bookorbit.app/opds/)
+- [EPUB 3.3 specification](https://www.w3.org/TR/epub-33/)
+- [Android media routing documentation](https://developer.android.com/media/routing)
+- [Build and release instructions](RELEASING.md)
 
+### Earlier releases
 
-Stand 17. November 2026: Debug-APK 0.1.0 gebaut und Signatur geprüft. Android-Lint meldet 0 Fehler und 19 Warnungen. Vier Parser-Tests liefen direkt mit JUnit, weil die Sandbox die Loopback-Verbindung des Gradle-Testprozesses sperrt. Der Parser liest 58.199 Zeitmarken aus Krummer Hund und 306.375 aus der Panem-Gesamtausgabe. Wiedergabe und Oberfläche auf einem Android-Gerät sowie Anmeldung und Download an einem realen OPDS-Server stehen aus.
-
-Audilege 0.2.0 (Build 3): APK, acht Unit-Tests und Android-Lint geprüft. Die APK nutzt dieselbe Paket-ID und Signatur wie FolioCue 0.1.1. Der vollständige Test mit einem echten BookOrbit-Konto auf Android steht aus.
-
-Audilege 0.2.1 (Build 4): Zwischen vorwärts laufenden Zeitmarken derselben Tonspur läuft die Wiedergabe ohne Sprung weiter. Die Hervorhebung richtet sich nach der Android-Wiedergabezeit und bleibt in einer Lücke zwischen Wortmarken leer.
+- **0.2.1 (build 4)** keeps audio continuous between successive timing marks in the same track. Highlighting follows playback time and clears between word marks.
+- **0.2.0 (build 3)** passed the APK build, eight unit tests, and Android lint. It uses the same package ID and signing certificate as FolioCue 0.1.1.
+- **0.1.0** passed APK and signature verification. Android lint reported 19 warnings and zero errors. Four parser tests passed. The parser loaded 58,199 timing marks from *Krummer Hund* and 306,375 from the collected *Hunger Games* edition.
