@@ -30,12 +30,44 @@ internal class OrbitCatalog(
     @Volatile private var session: String,
     private val readSession: (() -> String)? = null,
     private val persistSession: (String) -> Unit = {},
-) : LibraryCatalog {
+) : LibraryCatalog, ListeningStatisticsEndpoint {
     private val api = profile.api
     private val sessionLock = synchronized(sessionLocks) {
         sessionLocks.getOrPut("$api:${profile.id}:${profile.user}") { Any() }
     }
     @Volatile private var groupedProgress: Boolean? = null
+    override val statisticsIdentity: String = keyOf("${profile.api}\n${profile.user}")
+
+    override fun statisticsBooks(): List<StatisticsBook> = withSession { token ->
+        val books = linkedMapOf<Long, StatisticsBook>()
+        var page = 0
+        var total: Int
+        do {
+            val body = JSONObject().put("pagination", JSONObject().put("page", page).put("size", PAGE_SIZE))
+                .put("collapseSeries", false).put("collapseLinked", false)
+                .put("sort", JSONArray().put(JSONObject().put("field", "title").put("dir", "asc")))
+            val response = json(profile.catalog, body, token)
+            val items = response.getJSONArray("items")
+            total = response.getInt("total")
+            require(total >= 0 && (items.length() > 0 || page * PAGE_SIZE >= total))
+            items.objects().forEach { book ->
+                val id = book.getLong("id")
+                require(id > 0)
+                books[id] = StatisticsBook(id, book.optString("title"), author(book))
+            }
+            page++
+        } while (page.toLong() * PAGE_SIZE < total)
+        books.values.toList()
+    }
+
+    override fun statisticsSessions(bookId: Long, page: Int): ListeningSessionPage = withSession { token ->
+        require(bookId > 0 && page > 0)
+        parseStatisticsSessions(json(URI("$api/books/$bookId/sessions?page=$page&pageSize=100&sortBy=startedAt&sortDir=asc"), null, token))
+    }
+
+    override fun saveStatisticsSession(event: ListeningEvent) = withSession { token ->
+        request(URI("$api/books/files/${event.fileId}/sessions"), event.payload(), token) { Unit }
+    }
 
     override fun page(url: URI): CatalogPage = withSession { token ->
         val index = url.query?.removePrefix("page=")?.toIntOrNull() ?: 0

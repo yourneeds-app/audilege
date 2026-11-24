@@ -127,6 +127,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
     } else Catalog(profile, store.credential(profile))
     val catalog = remember(selected) { selected?.let { runCatching { from(it) }.getOrNull() } }
     SyncPendingEditions(readerPrefs, folder, catalog as? OrbitCatalog)
+    SyncListeningStatistics(selected, catalog as? OrbitCatalog)
     val migrationPage = history.lastOrNull()?.page
     LaunchedEffect(folder, catalog, migrationPage) {
         if (catalog is OrbitCatalog && migrationPage != null) {

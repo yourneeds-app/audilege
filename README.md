@@ -12,7 +12,15 @@ Audilege is an Android reader and audiobook player for [BookOrbit](https://booko
 - Tap the page to show the controls. Under **Aa**, adjust the font, size, line spacing, margins, paper color, and read-along highlighting. Use the table of contents, search, and bookmarks to move between passages.
 - In **Listen**, use the chapter controls, time jumps, playback speed, and sleep timer. Audilege skips text-only sections during playback. The mini-player, connected headphones, and Android media controls can also control playback.
 - Open **Settings** from the menu to choose English or German, adjust the theme and accent color, enable cover-based colors, and manage update checks.
-- The menu shows the selected profile, username and server. **Listening statistics** shows small book covers, time per book, daily totals and streaks, with bar charts for the last seven days or four weeks. Tap a bar for its listening time. Statistics are stored on this device, separately for each profile, and are not synced between devices. Existing statistics are retained when updating. A streak day requires at least one minute of listening. Earlier unrecorded activity and other devices are not included. Settings stays at the bottom of the menu.
+- The menu shows the selected profile, username and server. **Listening statistics** shows small book covers, time per book, daily totals and streaks, with bar charts for the last seven days or four weeks. Tap a bar for its listening time. With a compatible BookOrbit account, new listening sessions sync through your server and can be refreshed on another device. Earlier device-only totals and unlinked local books stay under **Only local**; they are preserved and are not uploaded with invented timestamps. A streak day requires at least one minute of listening. Settings stays at the bottom of the menu.
+
+### Listening statistics sync
+
+BookOrbit accounts use the server's file-scoped listening-session API. Audilege queues sessions locally before uploading them, retries the same IDs after connection failures, and confirms the returned history before clearing the queue. Short intervals are collected because BookOrbit accepts sessions of at least ten seconds. Subsecond remainders and intervals below that minimum remain on the device until they can be combined. OPDS-only profiles and books without a known server edition remain local.
+
+Uploads run about once a minute during playback and at pause or stop. Open **Listening statistics → BookOrbit** to refresh the account history, or tap **Sync now**. The open statistics screen refreshes every five minutes. Install a version with statistics sync on both devices. Reading-position sync remains separate.
+
+For this purpose, the app sends the server edition ID, a session ID, observed start/end times, active listening seconds, and the listening/platform type to your selected BookOrbit server. It does not send these to GitHub or another statistics service. If the server rejects the API or cannot be reached, queued listening remains saved and the statistics screen shows the pending or error state.
 
 ## Updates
 

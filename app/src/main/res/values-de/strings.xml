@@ -163,4 +163,14 @@
     <string name="license_gpl">GPL-3.0-Lizenz</string>
     <string name="license_other">Weitere Komponenten · Hinweise</string>
     <string name="license_ed25519">Ed25519 · Lizenz</string>
+    <string name="statistics_device_only">Nur lokal</string>
+    <string name="statistics_cloud_hint">Hörsitzungen aus deinem BookOrbit-Konto plus noch nicht übertragene Hörzeit auf diesem Gerät. Der bisherige Geräteverlauf bleibt unter Nur lokal erhalten.</string>
+    <string name="statistics_syncing">Abgleich mit BookOrbit…</string>
+    <string name="statistics_sync_sign_in">Melde dich zum Abgleichen erneut an. Deine Hörzeit bleibt auf diesem Gerät gespeichert.</string>
+    <string name="statistics_sync_unsupported">Dieser Server erlaubt derzeit keinen kompatiblen Statistikabgleich. Deine Hörzeit bleibt auf diesem Gerät gespeichert.</string>
+    <string name="statistics_sync_offline">Noch nicht abgeglichen. Deine Hörzeit bleibt auf diesem Gerät gespeichert und wird erneut versucht.</string>
+    <string name="statistics_sync_done">Mit BookOrbit abgeglichen. Andere Geräte erscheinen nach dem Aktualisieren.</string>
+    <string name="statistics_sync_pending">Wartet auf den ersten Abgleich mit BookOrbit.</string>
+    <string name="statistics_sync_collected">Weitere Hörzeit wird gesammelt oder wartet auf die Übertragung. BookOrbit übernimmt Sitzungen ab 10 Sekunden.</string>
+    <string name="statistics_sync_now">Jetzt abgleichen</string>
 </resources>

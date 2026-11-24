@@ -75,6 +75,8 @@ internal object AudilegePlayback {
     private val listeningMeter = ListeningMeter()
     private var listeningStats: ListeningStats? = null
     private var pendingListeningMs = 0L
+    private var statisticsSync: Job? = null
+    private var lastStatisticsSync = 0L
     var service: PlaybackService? = null
     var startPending = false
 
@@ -393,6 +395,7 @@ internal object AudilegePlayback {
         runCatching { narration?.progress() }.getOrNull()?.let { progress = it }
         if (releaseFocus) abandonFocus()
         checkpoint()
+        requestStatisticsSync(force = true)
         service?.refresh(force = true)
     }
 
@@ -521,6 +524,7 @@ internal object AudilegePlayback {
 
     fun stop() {
         checkpoint()
+        requestStatisticsSync(force = true)
         listeningMeter.reset()
         abandonFocus()
         job?.cancel()
@@ -569,6 +573,18 @@ internal object AudilegePlayback {
         val book = activeBook ?: return
         if (pendingListeningMs > 0) listeningStats?.record(book, pendingListeningMs)
         pendingListeningMs = 0
+        requestStatisticsSync()
+    }
+
+    private fun requestStatisticsSync(force: Boolean = false) {
+        val book = activeBook ?: return
+        val endpoint = book.online?.catalog ?: return
+        val store = listeningStats ?: return
+        val profile = book.file.parentFile?.name ?: return
+        val now = SystemClock.elapsedRealtime()
+        if (statisticsSync?.isActive == true || (!force && now - lastStatisticsSync < 60_000)) return
+        lastStatisticsSync = now
+        statisticsSync = scope.launch { store.synchronize(profile, endpoint, discover = false) }
     }
 
     private fun requestService(): Boolean {

@@ -6,6 +6,11 @@ import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.math.roundToLong
 import org.json.JSONObject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /** Counts elapsed listening time, never seeks, buffering or a paused media clock. */
 internal class ListeningMeter {
@@ -88,13 +93,72 @@ internal fun addListening(data: JSONObject, key: String, title: String, author: 
 internal class ListeningStats(context: Context) {
     private val prefs = context.getSharedPreferences("listening-statistics", Context.MODE_PRIVATE)
     private fun data(profile: String) = runCatching { JSONObject(prefs.getString(profile, "{}")!!) }.getOrElse { JSONObject() }
+    private fun <T> edit(profile: String, durable: Boolean = false, operation: (JSONObject) -> T): T = synchronized(storageLock) {
+        val root = data(profile)
+        val result = operation(root)
+        val editor = prefs.edit().putString(profile, root.toString())
+        if (durable) check(editor.commit()) else editor.apply()
+        result
+    }
     fun record(book: OpenBook, durationMs: Long) {
         if (durationMs <= 0) return
         val profile = book.file.parentFile?.name ?: "local"
-        val data = data(profile)
-        addListening(data, keyOf(book.file.absolutePath), book.publication.title, book.publication.author,
-            System.currentTimeMillis(), durationMs)
-        prefs.edit().putString(profile, data.toString()).apply()
+        edit(profile) { root ->
+            val online = book.online
+            if (online == null) addListening(root, keyOf(book.file.absolutePath), book.publication.title,
+                book.publication.author, System.currentTimeMillis(), durationMs)
+            else queueListening(statisticsAccount(root, online.catalog.statisticsIdentity), online.detail.id,
+                online.detail.fileId, book.publication.title, book.publication.author, System.currentTimeMillis(), durationMs)
+        }
     }
-    fun summary(profile: String): ListeningSummary = listeningSummary(data(profile), LocalDate.now())
+
+    fun summary(profile: String, identity: String? = null): ListeningSummary = synchronized(storageLock) {
+        val root = data(profile)
+        val selected = if (identity == null) root else cloudListeningData(statisticsAccount(root, identity))
+        listeningSummary(selected, LocalDate.now())
+    }
+
+    fun syncInfo(profile: String, identity: String): StatisticsSyncInfo = synchronized(storageLock) {
+        val account = statisticsAccount(data(profile), identity)
+        val pending = account.objectAt("outbox").length() + account.objectAt("drafts").length()
+        StatisticsSyncInfo(account.optLong("lastSync"), pending,
+            account.optString("syncError").takeIf(String::isNotBlank))
+    }
+
+    suspend fun synchronize(profile: String, endpoint: ListeningStatisticsEndpoint, discover: Boolean) {
+        val mutex = synchronized(syncLocks) { syncLocks.getOrPut("$profile:${endpoint.statisticsIdentity}") { Mutex() } }
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                try {
+                    val queued = edit(profile, durable = true) { root ->
+                        val account = statisticsAccount(root, endpoint.statisticsIdentity)
+                        sealListeningDrafts(account)
+                        queuedListening(account)
+                    }
+                    if (queued.isEmpty() && !discover) return@withLock
+                    val result = synchronizeListening(endpoint, queued, discover)
+                    edit(profile, durable = true) { root ->
+                        commitListeningSync(statisticsAccount(root, endpoint.statisticsIdentity), result, System.currentTimeMillis())
+                    }
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (failure: Exception) {
+                    val reason = when {
+                        failure is OrbitHttp && failure.status in setOf(400, 403, 404, 405, 422) -> "unsupported"
+                        failure is CatalogAccessException && failure.messageId == R.string.session_expired -> "sign_in"
+                        failure is CatalogAccessException && failure.messageId == R.string.account_permission -> "unsupported"
+                        else -> "offline"
+                    }
+                    edit(profile) { statisticsAccount(it, endpoint.statisticsIdentity).put("syncError", reason) }
+                }
+            }
+        }
+    }
+
+    companion object {
+        private val storageLock = Any()
+        private val syncLocks = mutableMapOf<String, Mutex>()
+    }
 }
+
+internal data class StatisticsSyncInfo(val lastSync: Long, val pending: Int, val error: String?)

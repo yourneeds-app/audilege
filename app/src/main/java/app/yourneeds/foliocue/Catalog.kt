@@ -167,6 +167,7 @@ internal class Profiles(context: Context) {
     }
 
     fun renew(profile: Profile, credential: String) {
+        requireCurrentIdentity(profile)
         check(prefs.edit().putString(profile.id, encrypt(credential)).commit())
     }
 
@@ -184,7 +185,17 @@ internal class Profiles(context: Context) {
         check(editor.commit())
     }
 
-    fun credential(profile: Profile): String = decrypt(prefs.getString(profile.id, null) ?: error("Der Zugang fehlt."))
+    private fun requireCurrentIdentity(profile: Profile) {
+        val current = list().firstOrNull { it.id == profile.id } ?: error("Das Profil wurde entfernt.")
+        check(current.api == profile.api && current.user == profile.user && current.accountLogin == profile.accountLogin) {
+            "Die Profilanmeldung wurde geändert."
+        }
+    }
+
+    fun credential(profile: Profile): String {
+        requireCurrentIdentity(profile)
+        return decrypt(prefs.getString(profile.id, null) ?: error("Der Zugang fehlt."))
+    }
 
     private fun decrypt(encoded: String): String {
         val value = Base64.decode(encoded, Base64.NO_WRAP)

@@ -20,14 +20,42 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, catalog: OrbitCatalog? = null, close: () -> Unit) {
     val store = remember { ListeningStats(context) }
     val covers = remember { CoverStore() }
-    var summary by remember(profile) { mutableStateOf(store.summary(profile?.id ?: "local")) }
-    LaunchedEffect(profile) {
-        while (true) { delay(5000); summary = store.summary(profile?.id ?: "local") }
+    var localOnly by rememberSaveable(profile?.id) { mutableStateOf(false) }
+    val profileId = profile?.id ?: "local"
+    val identity = catalog?.statisticsIdentity
+    val selectedIdentity = identity.takeUnless { localOnly }
+    var summary by remember(profileId, selectedIdentity) { mutableStateOf(store.summary(profileId, selectedIdentity)) }
+    var syncInfo by remember(profileId, identity) { mutableStateOf(identity?.let { store.syncInfo(profileId, it) }) }
+    var syncing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    suspend fun synchronize() {
+        if (catalog == null || syncing) return
+        syncing = true
+        try { store.synchronize(profileId, catalog, discover = true) }
+        finally {
+            syncInfo = store.syncInfo(profileId, catalog.statisticsIdentity)
+            summary = store.summary(profileId, selectedIdentity)
+            syncing = false
+        }
+    }
+    LaunchedEffect(profileId, catalog) {
+        if (catalog != null) while (true) {
+            synchronize()
+            delay(300_000)
+        }
+    }
+    LaunchedEffect(profileId, selectedIdentity) {
+        while (true) {
+            delay(5000)
+            summary = store.summary(profileId, selectedIdentity)
+            syncInfo = identity?.let { store.syncInfo(profileId, it) }
+        }
     }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.safeDrawingPadding()) {
@@ -36,8 +64,28 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
                 item {
                     Text(profile?.label ?: stringResource(R.string.local), style = MaterialTheme.typography.titleMedium)
                     profile?.let { Text(it.user, style = MaterialTheme.typography.bodyMedium) }
-                    Text(stringResource(R.string.statistics_local_hint), style = MaterialTheme.typography.bodySmall,
+                    if (identity != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = !localOnly, onClick = { localOnly = false }, label = { Text("BookOrbit") })
+                        FilterChip(selected = localOnly, onClick = { localOnly = true }, label = { Text(stringResource(R.string.statistics_device_only)) })
+                    }
+                    Text(stringResource(if (selectedIdentity != null) R.string.statistics_cloud_hint else R.string.statistics_local_hint),
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (selectedIdentity != null) {
+                        val info = syncInfo
+                        Text(stringResource(when {
+                            syncing -> R.string.statistics_syncing
+                            info?.error == "sign_in" -> R.string.statistics_sync_sign_in
+                            info?.error == "unsupported" -> R.string.statistics_sync_unsupported
+                            info?.error != null -> R.string.statistics_sync_offline
+                            (info?.lastSync ?: 0) > 0 -> R.string.statistics_sync_done
+                            else -> R.string.statistics_sync_pending
+                        }), style = MaterialTheme.typography.bodySmall)
+                        if ((info?.pending ?: 0) > 0) Text(stringResource(R.string.statistics_sync_collected), style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = { scope.launch { synchronize() } }, enabled = !syncing) {
+                            Text(stringResource(R.string.statistics_sync_now))
+                        }
+                    }
                 }
                 item { ListeningChart(summary.days) }
                 item {
