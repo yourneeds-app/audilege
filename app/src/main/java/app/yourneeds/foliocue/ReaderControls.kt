@@ -32,16 +32,11 @@ private fun clockLabel(ms: Int): String {
     else String.format(Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60)
 }
 
-internal fun playerCover(book: Publication, online: OnlineBook?): java.io.InputStream? {
-    if (book.audioStream == null) book.cover?.let { path -> book.open(path)?.let { return it } }
-    return runCatching { online?.catalog?.cover(online.detail.id) }.getOrNull() ?: book.cover?.let(book::open)
-}
-
 @Composable
 internal fun PlayerTheme(mode: Mode, colors: ColorScheme, book: Publication, online: OnlineBook?, file: File,
                         covers: CoverStore, content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = colors) {
-        if (mode == Mode.Listen) CoverTheme(covers, "player:${file.absolutePath}", { playerCover(book,online) },content)
+        if (mode == Mode.Listen) CoverTheme(covers, listeningCoverKey(file, book, online), listeningCoverSources(book, online), content)
         else content()
     }
 }
@@ -54,13 +49,16 @@ internal fun ListeningArtwork(
         val width = minOf((maxHeight * .58f).coerceAtLeast(64.dp), maxWidth * .69f, 360.dp)
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            BookCover(book.title, covers, "player:${file.absolutePath}", { playerCover(book,online) },
-                Modifier.width(width).aspectRatio(.82f))
+            BookCover(book.title, covers, listeningCoverKey(file, book, online), listeningCoverSources(book, online),
+                Modifier.width(width).aspectRatio(1f))
             Spacer(Modifier.height(3.dp))
-            Text(stringResource(R.string.audio_chapter,chapter + 1), style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            val label = book.contents.firstOrNull { it.path == book.spine[chapter].path }?.label.orEmpty()
-            Text(label.ifBlank { book.title }, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
+            val chapterLabel = book.chapterTitle(chapter) ?: stringResource(R.string.audio_chapter, chapter + 1)
+            if (!chapterLabel.equals(book.title, ignoreCase = true)) {
+                Text(chapterLabel, style = MaterialTheme.typography.bodyMedium, maxLines = 2,
+                    overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center)
+            }
+            Text(book.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
                 maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
             ListenOutputStatus()
         }
@@ -214,17 +212,27 @@ private fun SleepTimer(modifier: Modifier) {
 }
 
 @Composable
-internal fun MiniPlayer(onOpen: (OpenBook) -> Unit) {
+internal fun MiniPlayer(covers: CoverStore, onOpen: (OpenBook) -> Unit) {
     val player = AudilegePlayback
     val book = player.activeBook ?: return
     Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically) {
             val openLabel = stringResource(R.string.audio_open)
-            Column(Modifier.weight(1f).clickable(onClickLabel = openLabel) { onOpen(book) }
-                .heightIn(min = 48.dp).padding(start = 8.dp),verticalArrangement = Arrangement.Center) {
-                Text(book.publication.title, style = MaterialTheme.typography.titleSmall, maxLines = 1,overflow = TextOverflow.Ellipsis)
-                Text(stringResource(R.string.audio_chapter,player.chapter + 1),style = MaterialTheme.typography.bodySmall)
+            Row(Modifier.weight(1f).clickable(onClickLabel = openLabel) { onOpen(book) }.heightIn(min = 48.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BookCover("", covers, listeningCoverKey(book.file, book.publication, book.online),
+                    listeningCoverSources(book.publication, book.online), Modifier.size(38.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+                    Text(book.publication.title, style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val chapterLabel = book.publication.chapterTitle(player.chapter)
+                        ?: stringResource(R.string.audio_chapter, player.chapter + 1)
+                    if (!chapterLabel.equals(book.publication.title, ignoreCase = true)) {
+                        Text(chapterLabel, style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
             }
             PlayControl(player.playing,player.loading,true,false,player::toggle)
             TextButton(onClick = player::stop) { Text(stringResource(R.string.close)) }

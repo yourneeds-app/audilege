@@ -16,7 +16,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -104,7 +106,8 @@ internal fun BookReader(
     val playing = attached && playback.playing
     val scope = rememberCoroutineScope()
     var syncState by remember { mutableStateOf(sync?.state) }
-    var syncing by remember { mutableStateOf(false) }
+    var retryingSync by remember { mutableStateOf(false) }
+    var conflictWriteFailed by remember { mutableStateOf(false) }
     var movement by remember(location) { mutableIntStateOf(0) }
     var lastAnchor by remember(location) { mutableStateOf<String?>(location.anchor) }
     var chapterFailed by remember(displayed) { mutableStateOf(false) }
@@ -114,18 +117,26 @@ internal fun BookReader(
     var audioRetry by remember { mutableIntStateOf(0) }
 
 
-    suspend fun syncPending(force: Boolean = false) {
+    suspend fun syncPending(force: Boolean = false, userInitiated: Boolean = false) {
         val bridge = sync ?: return
-        if (!force && syncState == SyncState.Conflict) return
-        syncing = true
+        if (!force && bridge.state == SyncState.Conflict) {
+            syncState = SyncState.Conflict
+            return
+        }
+        if (userInitiated && retryingSync) return
+        if (userInitiated) retryingSync = true
         try {
             if (force) bridge.keepLocal()
-            syncState = if (bridge.pending != null) bridge.flush(force) else bridge.refresh()
+            if (bridge.pending != null) bridge.flush(force) else bridge.refresh()
         } catch (failure: CancellationException) {
             throw failure
-        } catch (failure: Exception) {
-            syncState = SyncState.Pending
-        } finally { syncing = false }
+        } catch (_: Exception) {
+            if (force) conflictWriteFailed = true
+        } finally {
+            syncState = bridge.state
+            if (syncState != SyncState.Conflict) conflictWriteFailed = false
+            if (userInitiated) retryingSync = false
+        }
     }
 
     fun stage(candidate: JSONObject?) {
@@ -140,7 +151,7 @@ internal fun BookReader(
         editor.apply()
         if (sync == null || sync.pending?.toString() == candidate.toString()) return
         sync.remember(candidate)
-        if (syncState != SyncState.Conflict) syncState = SyncState.Pending
+        syncState = sync.state
     }
 
     fun stagePlayback() {
@@ -520,17 +531,28 @@ internal fun BookReader(
                 }
             }
             if (controls || mode == Mode.Listen) {
-                syncState?.takeIf { it != SyncState.Synced }?.let { state ->
-                    Text(stringResource(state.label), Modifier.padding(horizontal = 16.dp),
+                if (syncState == SyncState.Unavailable) {
+                    Column(Modifier.padding(start = 16.dp, end = 16.dp)) {
+                        Text(stringResource(R.string.sync_retry_automatic), style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                        TextButton(enabled = !retryingSync, onClick = { scope.launch { syncPending(userInitiated = true) } }) {
+                            Text(stringResource(R.string.sync_retry))
+                        }
+                    }
+                } else if (syncState == SyncState.Conflict && sync != null) {
+                    Text(stringResource(R.string.sync_conflict), Modifier.padding(horizontal = 16.dp).semantics { liveRegion = LiveRegionMode.Polite },
                         style = MaterialTheme.typography.labelMedium)
-                    if (state == SyncState.Conflict && sync != null) {
-                        SyncPlaceLabel(book, mode, sync.local, sync.localChangedAt, R.string.reader_local_place, displayed.index)
-                        SyncPlaceLabel(book, mode, sync.remote, sync.remoteChangedAt, R.string.reader_remote_place, 0)
-                        Row(Modifier.padding(horizontal = 8.dp)) {
-                        TextButton(enabled = !syncing, onClick = {
-                            val place = sync?.remote?.place(book, mode)
-                            sync?.discardLocal()
+                    SyncPlaceLabel(book, mode, sync.local, sync.localChangedAt, R.string.reader_local_place, displayed.index)
+                    SyncPlaceLabel(book, mode, sync.remote, sync.remoteChangedAt, R.string.reader_remote_place, 0)
+                    if (conflictWriteFailed) Text(stringResource(R.string.sync_choice_failed),
+                        Modifier.padding(horizontal = 16.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                    Row(Modifier.padding(horizontal = 8.dp)) {
+                        TextButton(enabled = !retryingSync, onClick = {
+                            val place = sync.remote?.place(book, mode)
+                            sync.discardLocal()
                             syncState = SyncState.Synced
+                            conflictWriteFailed = false
                             if (attached) playback.stop()
                             inspection = null
                             location = Location(place?.chapter ?: 0, place?.anchor, location.revision + 1, place?.cfi, 0)
@@ -540,18 +562,17 @@ internal fun BookReader(
                                 .putInt("$bookKey.cue.0", 0).remove("$bookKey.elapsed.0").putFloat("$bookKey.shelfPercent", 0f)
                             edit.apply()
                         }) { Text(stringResource(R.string.sync_remote)) }
-                        TextButton(enabled = !syncing, onClick = {
-                            if (sync.local?.place(book,mode) != null) scope.launch { syncPending(true) }
+                        TextButton(enabled = !retryingSync, onClick = {
+                            if (sync.local?.place(book,mode) != null) scope.launch { syncPending(force = true, userInitiated = true) }
                             else if (mode != Mode.Read && attached && playback.anchor != null) {
                                 stagePlayback()
-                                scope.launch { syncPending(true) }
+                                scope.launch { syncPending(force = true, userInitiated = true) }
                             } else view?.capturePosition(null) { cfi, part ->
                                 stage(book.progressPayload(displayed.index,cfi,null,part,false))
-                                scope.launch { syncPending(true) }
+                                scope.launch { syncPending(force = true, userInitiated = true) }
                             }
                         }) {
                             Text(stringResource(R.string.sync_local))
-                        }
                         }
                     }
                 }

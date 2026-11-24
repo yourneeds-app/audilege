@@ -111,6 +111,9 @@
     <string name="sync_remote">Use server position</string>
     <string name="sync_local">Use this position</string>
     <string name="sync_unavailable">Reading position sync unavailable</string>
+    <string name="sync_retry_automatic">Could not sync your reading position with BookOrbit. Audilege will try again automatically.</string>
+    <string name="sync_retry">Retry sync</string>
+    <string name="sync_choice_failed">Could not save your choice to BookOrbit. Check the connection and try again.</string>
     <string name="update_missing">Enter a token to check the private repository.</string>
     <string name="stream_error">Could not open this book from the server.</string>
     <string name="open_releases">Open GitHub releases</string>

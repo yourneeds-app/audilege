@@ -111,14 +111,18 @@ private fun artworkColor(bitmap: Bitmap): Color? {
 }
 
 @Composable
-internal fun CoverTheme(covers: CoverStore, key: String, load: () -> InputStream?, content: @Composable () -> Unit) {
+internal fun CoverTheme(covers: CoverStore, key: String, load: () -> InputStream?, content: @Composable () -> Unit) =
+    CoverTheme(covers, key, listOf(load), content)
+
+@Composable
+internal fun CoverTheme(covers: CoverStore, key: String, sources: List<() -> InputStream?>, content: @Composable () -> Unit) {
     val prefs = LocalContext.current.getSharedPreferences("reader", Context.MODE_PRIVATE)
     val enabled = watchPreference(prefs, setOf("coverAccent")) { prefs.getBoolean("coverAccent", true) }
-    val currentLoad by rememberUpdatedState(load)
+    val currentSources by rememberUpdatedState(sources)
     val source by produceState<Color?>(null, enabled, covers, key) {
         value = null
         if (enabled) {
-            val bitmap = covers.get(key, currentLoad)
+            val bitmap = covers.get(key, currentSources)
             value = bitmap?.let { withContext(Dispatchers.Default) { artworkColor(it) } }
         }
     }

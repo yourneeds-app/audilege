@@ -3,6 +3,7 @@ package app.yourneeds.foliocue
 import android.content.SharedPreferences
 import java.lang.ref.WeakReference
 import java.time.Instant
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -133,6 +134,7 @@ internal class ReadingSync private constructor(
     @Volatile var remote: JSONObject? = initial ?: baseline
         private set
     @Volatile private var conflict = false
+    @Volatile private var unavailable = false
     val local get() = pending ?: baseline
     val resume get() = pending ?: remote
     val localChangedAt: Long get() = preferences.getLong(timeKey, 0L).takeIf { it > 0 }
@@ -140,6 +142,7 @@ internal class ReadingSync private constructor(
     val remoteChangedAt: Long? get() = changedAt(remote)
     val state: SyncState get() = when {
         conflict -> SyncState.Conflict
+        unavailable -> SyncState.Unavailable
         pending != null || remote == null -> SyncState.Pending
         else -> SyncState.Synced
     }
@@ -148,6 +151,7 @@ internal class ReadingSync private constructor(
 
     @Synchronized private fun receiveInitial(initial: JSONObject?) {
         if (initial == null) return
+        unavailable = false
         remote = initial
         if (pending == null) {
             baseline = initial
@@ -159,6 +163,7 @@ internal class ReadingSync private constructor(
 
     @Synchronized fun remember(place: JSONObject) {
         if (pending?.toString() == place.toString()) return
+        if (pending == null && !conflict && baseline?.let { serverHasCandidate(it, place) } == true) return
         pending = place
         preferences.edit().putString(pendingKey, place.toString())
             .putLong(timeKey, System.currentTimeMillis()).apply()
@@ -184,22 +189,33 @@ internal class ReadingSync private constructor(
         remember(copy)
     }
 
-    suspend fun refresh(): SyncState = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            if (pending != null) return@withLock exchange(false)
-            val latest = online.progress()
-            synchronized(this@ReadingSync) {
-                remote = latest
-                if (pending != null) return@synchronized state
-                conflict = !samePosition(baseline, latest)
-                if (!conflict) discardLocal()
-                state
-            }
+    suspend fun refresh(): SyncState = communicate {
+        if (pending != null) return@communicate exchange(false)
+        val latest = online.progress()
+        synchronized(this@ReadingSync) {
+            remote = latest
+            if (pending != null) return@synchronized state
+            conflict = baseline != null && !samePosition(baseline, latest)
+            if (!conflict) discardLocal()
+            state
         }
     }
 
-    suspend fun flush(force: Boolean = false): SyncState = withContext(Dispatchers.IO) {
-        mutex.withLock { exchange(force) }
+    suspend fun flush(force: Boolean = false): SyncState = if (pending == null) state else communicate { exchange(force) }
+
+    private suspend fun communicate(operation: () -> SyncState): SyncState = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            try {
+                operation()
+                unavailable = false
+                state
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                unavailable = true
+                throw failure
+            }
+        }
     }
 
     private fun exchange(force: Boolean): SyncState {
@@ -220,9 +236,10 @@ internal class ReadingSync private constructor(
         var saved = latest
         if (!retainedText(latest, expected, candidate)) {
             if (!samePosition(expected, latest)) return markConflict(latest)
-            submit(candidate, writePayload(candidate, latest))
-            saved = online.progress()
+            val receipt = submit(candidate, writePayload(candidate, latest), latest)
+            saved = receipt?.position ?: online.progress()
             if (serverHasCandidate(saved, candidate)) return acknowledge(saved, candidate)
+            if (receipt?.superseded == true) return markConflict(saved)
             if (!retainedText(saved, latest, candidate)) return markConflict(saved)
         }
         // A deliberate rewind needs a text write on BookOrbit. Guard the second write and
@@ -232,8 +249,8 @@ internal class ReadingSync private constructor(
         if (!samePosition(saved, checked) || checked.valueOf("textUpdatedAt") != saved.valueOf("textUpdatedAt"))
             return markConflict(checked)
         val text = JSONObject(candidate.toString()).put("source", "text")
-        submit(candidate, writePayload(text, checked))
-        saved = online.progress()
+        val receipt = submit(candidate, writePayload(text, checked), checked)
+        saved = receipt?.position ?: online.progress()
         if (!serverHasCandidate(saved, candidate)) return markConflict(saved)
         return acknowledge(saved, candidate)
     }
@@ -244,10 +261,10 @@ internal class ReadingSync private constructor(
             (serverHasCandidate(server, previous) || retainedText(server, baseline, previous))
     }
 
-    private fun submit(candidate: JSONObject, body: JSONObject) {
+    private fun submit(candidate: JSONObject, body: JSONObject, previous: JSONObject): ProgressReceipt? {
         submitted = candidate
         preferences.edit().putString(submittedKey, candidate.toString()).apply()
-        online.updateProgress(body)
+        return online.updateProgress(body, previous)
     }
 
     @Synchronized private fun markConflict(latest: JSONObject): SyncState {
@@ -286,7 +303,7 @@ internal class ReadingSync private constructor(
 }
 
 internal enum class SyncState(val label: Int) {
-    Synced(R.string.sync_status), Pending(R.string.sync_pending), Conflict(R.string.sync_conflict),
+    Synced(R.string.sync_status), Pending(R.string.sync_pending), Conflict(R.string.sync_conflict), Unavailable(R.string.sync_unavailable),
 }
 
 internal fun Publication.progressPayload(chapter: Int, cfi: String?, anchor: String?, fraction: Double, narration: Boolean): JSONObject? {

@@ -111,6 +111,9 @@
     <string name="sync_remote">Serverstand übernehmen</string>
     <string name="sync_local">Diesen Stand übernehmen</string>
     <string name="sync_unavailable">Lesestand-Abgleich nicht verfügbar</string>
+    <string name="sync_retry_automatic">Der Lesestand konnte nicht mit BookOrbit abgeglichen werden. Audilege versucht es automatisch erneut.</string>
+    <string name="sync_retry">Erneut abgleichen</string>
+    <string name="sync_choice_failed">Deine Auswahl konnte nicht an BookOrbit übertragen werden. Prüfe die Verbindung und versuche es erneut.</string>
     <string name="update_missing">Für die Suche im privaten Repository bitte ein Token eingeben.</string>
     <string name="stream_error">Dieses Buch ließ sich auf dem Server nicht öffnen.</string>
     <string name="open_releases">GitHub-Releases öffnen</string>

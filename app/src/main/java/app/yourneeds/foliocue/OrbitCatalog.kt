@@ -13,15 +13,16 @@ internal class OrbitHttp(val status: Int) : Exception("BookOrbit HTTP $status")
 internal data class OrbitBook(
     val id: Long, val fileId: Long, val author: String, val description: String,
     val series: String = "", val narrator: String = "", val pages: Int? = null,
+    val hasAudiobookCover: Boolean? = null,
 )
 internal interface ProgressEndpoint {
     fun progress(): JSONObject
-    fun updateProgress(body: JSONObject): JSONObject
+    fun updateProgress(body: JSONObject, previous: JSONObject): ProgressReceipt?
 }
 
 internal data class OnlineBook(val catalog: OrbitCatalog, val detail: OrbitBook) : ProgressEndpoint {
     override fun progress() = catalog.progress(detail.fileId)
-    override fun updateProgress(body: JSONObject) = catalog.progress(detail.fileId, body)
+    override fun updateProgress(body: JSONObject, previous: JSONObject) = catalog.updateProgress(detail.fileId, body, previous)
 }
 
 internal class OrbitCatalog(
@@ -30,6 +31,7 @@ internal class OrbitCatalog(
     private val persistSession: (String) -> Unit = {},
 ) : LibraryCatalog {
     private val api = profile.api
+    @Volatile private var groupedProgress: Boolean? = null
 
     override fun page(url: URI): CatalogPage = withSession { token ->
         val index = url.query?.removePrefix("page=")?.toIntOrNull() ?: 0
@@ -74,7 +76,8 @@ internal class OrbitCatalog(
         OrbitBook(id, fileId, author(book), meta.text("description"), meta.text("seriesName"),
             people(meta, "narrators").ifBlank { audioMeta?.let { people(it, "narrators") }.orEmpty() }
                 .ifBlank { meta.text("narrator") },
-            meta.optInt("pageCount").takeIf { it > 0 })
+            meta.optInt("pageCount").takeIf { it > 0 },
+            book.optJSONObject("covers")?.takeIf { it.has("audio") }?.let { !it.isNull("audio") })
     }
 
     fun publication(book: OrbitBook, title: String): Publication = Publication(
@@ -94,7 +97,36 @@ internal class OrbitCatalog(
         openStream(URI("$api/books/$id/thumbnail"), token)
     }
 
-    fun progress(fileId: Long, body: JSONObject? = null): JSONObject = withSession { token ->
+    fun audiobookCover(id: Long): InputStream = withSession { token ->
+        openStream(URI("$api/books/$id/cover?medium=audio&strict=true"), token)
+    }
+
+    fun progress(fileId: Long): JSONObject = withSession { token ->
+        if (groupedProgress != false) {
+            try {
+                val row = json(URI("$api/reading-progress?fileId=$fileId"), null, token).groupedPosition(fileId)
+                groupedProgress = true
+                return@withSession row
+            } catch (failure: OrbitHttp) {
+                if (failure.status != 404 && failure.status != 405) throw failure
+            }
+        }
+        legacyProgress(fileId, null, token).also { groupedProgress = false }
+    }
+
+    fun updateProgress(fileId: Long, body: JSONObject, previous: JSONObject): ProgressReceipt? = withSession { token ->
+        if (groupedProgress == true) {
+            val payload = groupedProgressWrite(fileId, body, previous)
+            request(URI("$api/reading-progress"), payload, token, "PUT") {
+                JSONObject(it.bufferedReader(Charsets.UTF_8).readText()).groupedReceipt(fileId)
+            }
+        } else {
+            legacyProgress(fileId, body, token)
+            null // Legacy writes have no receipt. ReadingSync verifies with a fresh GET.
+        }
+    }
+
+    private fun legacyProgress(fileId: Long, body: JSONObject?, token: String): JSONObject =
         request(URI("$api/books/files/$fileId/progress"), body, token) {
             val response = it.bufferedReader(Charsets.UTF_8).readText().trim()
             when {
@@ -102,7 +134,6 @@ internal class OrbitCatalog(
                 else -> JSONObject(response)
             }
         }
-    }
 
     private fun epubResource(book: OrbitBook, path: String, audio: Boolean): URI {
         val endpoint = if (audio) "media-overlay/file" else "file"
@@ -204,16 +235,18 @@ internal class OrbitCatalog(
             request(url, body, token) { JSONObject(it.bufferedReader(Charsets.UTF_8).readText()) }
 
         private fun <T> request(
-            url: URI, body: JSONObject?, token: String?, read: (InputStream) -> T,
+            url: URI, body: JSONObject?, token: String?, method: String = if (body == null) "GET" else "POST",
+            read: (InputStream) -> T,
         ): T {
             val connection = url.toURL().openConnection() as HttpURLConnection
             try {
                 connection.instanceFollowRedirects = false
+                connection.useCaches = false
                 connection.connectTimeout = 10000
                 connection.readTimeout = 30000
                 if (token != null) connection.setRequestProperty("Authorization", "Bearer $token")
                 if (body != null) {
-                    connection.requestMethod = "POST"
+                    connection.requestMethod = method
                     connection.doOutput = true
                     val bytes = body.toString().toByteArray(Charsets.UTF_8)
                     connection.setFixedLengthStreamingMode(bytes.size)

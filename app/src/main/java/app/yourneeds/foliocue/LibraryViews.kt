@@ -47,11 +47,15 @@ internal class CoverStore {
     private val locks = Array(32) { Mutex() }
     private val slots = Semaphore(4)
 
-    suspend fun get(key: String, load: () -> InputStream?): Bitmap? =
+    suspend fun get(key: String, load: () -> InputStream?): Bitmap? = get(key, listOf(load))
+
+    suspend fun get(key: String, sources: List<() -> InputStream?>): Bitmap? =
         locks[(key.hashCode() and Int.MAX_VALUE) % locks.size].withLock {
             cache.get(key) ?: slots.withPermit {
                 withContext(Dispatchers.IO) {
-                    runCatching { load()?.use(::decodeCover) }.getOrNull()?.also { cache.put(key, it) }
+                    sources.firstNotNullOfOrNull { source ->
+                        runCatching { source()?.use(::decodeCover) }.getOrNull()
+                    }?.also { cache.put(key, it) }
                 }
             }
         }
@@ -79,10 +83,14 @@ internal class CoverStore {
 }
 
 @Composable
-internal fun BookCover(title: String, covers: CoverStore, key: String, load: () -> InputStream?, modifier: Modifier) {
+internal fun BookCover(title: String, covers: CoverStore, key: String, load: () -> InputStream?, modifier: Modifier) =
+    BookCover(title, covers, key, listOf(load), modifier)
+
+@Composable
+internal fun BookCover(title: String, covers: CoverStore, key: String, sources: List<() -> InputStream?>, modifier: Modifier) {
     val bitmap by produceState<Bitmap?>(null, key) {
         value = null
-        value = covers.get(key, load)
+        value = covers.get(key, sources)
     }
     Surface(modifier.clearAndSetSemantics { }, color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.small) {
         val image = bitmap
@@ -91,7 +99,9 @@ internal fun BookCover(title: String, covers: CoverStore, key: String, load: () 
         else Column(Modifier.fillMaxSize().padding(8.dp), verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(painterResource(R.drawable.shelf_book), null)
-            Text(title, style = MaterialTheme.typography.labelMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            if (title.isNotBlank()) {
+                Text(title, style = MaterialTheme.typography.labelMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }

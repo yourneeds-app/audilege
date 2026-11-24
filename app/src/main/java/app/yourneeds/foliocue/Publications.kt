@@ -67,6 +67,8 @@ private fun Element.descendants(name: String) = getElementsByTagNameNS("*", name
 
 internal const val BOOK_HOST = "epub.invalid"
 private val literalPercent = Regex("%(?![0-9a-fA-F]{2})")
+private val propertySeparator = Regex("\\s+")
+private val audioCoverTypes = setOf("image/jpeg", "image/png", "image/gif", "image/webp")
 
 internal fun resource(base: String, href: String): URI? = runCatching {
     val origin = URI("https", BOOK_HOST, "/$base", null)
@@ -103,6 +105,7 @@ internal class Publication(
 ) {
     constructor(file: File) : this(file.nameWithoutExtension, { path -> archiveEntry(file, path) })
     val cover: String?
+    val audiobookCover: String?
     val author: String
     val description: String
     val narrationDurationSeconds: Long?
@@ -152,8 +155,15 @@ internal class Publication(
             .filterIsInstance<Element>().indexOf(spineElement).let { (it + 1) * 2 }
         val coverId = opf.descendants("meta").firstOrNull { it.getAttribute("name") == "cover" }
             ?.getAttribute("content")
-        cover = (entries.firstOrNull { "cover-image" in it.getAttribute("properties").split(' ') }
-            ?.getAttribute("id") ?: coverId)?.let { manifest[it]?.path }
+        val audioCoverIds = entries.mapNotNull { entry ->
+            val properties = entry.getAttribute("properties").split(propertySeparator)
+            entry.getAttribute("id").takeIf { "storyteller:audio-cover-image" in properties && "cover-image" !in properties }
+        }
+        cover = (entries.firstOrNull { "cover-image" in it.getAttribute("properties").split(propertySeparator) }
+            ?.getAttribute("id") ?: coverId?.takeUnless { it in audioCoverIds })?.let { manifest[it]?.path }
+        audiobookCover = audioCoverIds.firstNotNullOfOrNull { id ->
+            manifest[id]?.takeIf { it.path != cover && it.type.lowercase() in audioCoverTypes }?.path
+        }
         spine = spineElement.children("itemref").map { manifest[it.getAttribute("idref")] ?: error("EPUB spine reference") }
         sharedOverlays = spine.filter { it.overlay.isNotEmpty() }.groupingBy { it.overlay }
             .eachCount().filterValues { it > 1 }.keys
@@ -174,6 +184,11 @@ internal class Publication(
     }
 
     fun open(path: String): InputStream? = if (path in mime) resourceStream(path) else null
+
+    fun chapterTitle(index: Int): String? {
+        val path = spine.getOrNull(index)?.path ?: return null
+        return contents.firstNotNullOfOrNull { section -> section.label.takeIf { section.path == path && it.isNotBlank() } }
+    }
 
     fun prepareNarrationLocations(chapter: Int, cues: List<Cue>) {
         if (cues.isEmpty() || synchronized(narratedChapters) { narratedChapters.containsKey(chapter) }) return

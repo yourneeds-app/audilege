@@ -464,7 +464,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                                 Box(Modifier.weight(if (split) .52f else 1f)) { renderDetail(detail) }
                             }
                         }
-                        MiniPlayer { opened = it }
+                        MiniPlayer(covers) { opened = it }
                         if (!rail && (detail == null || split)) ShelfTabs(tab,!busy) { navigate(it) }
                     }
                     }

@@ -40,12 +40,16 @@ class ReadingSyncTest {
     private class Server(var row: JSONObject = JSONObject()) : ProgressEndpoint {
         var writes = 0
         var receive: (() -> Unit)? = null
-        override fun progress(): JSONObject = JSONObject(row.toString())
-        override fun updateProgress(body: JSONObject): JSONObject {
+        var offline = false
+        override fun progress(): JSONObject {
+            if (offline) throw java.io.IOException("Network unavailable")
+            return JSONObject(row.toString())
+        }
+        override fun updateProgress(body: JSONObject, previous: JSONObject): ProgressReceipt? {
             row = JSONObject(body.toString())
             writes++
             receive?.invoke()
-            return JSONObject()
+            return null
         }
     }
 
@@ -53,11 +57,28 @@ class ReadingSyncTest {
         val server = Server(place(8))
         val bridge = ReadingSync.open(server, server.progress(), preferences(), UUID.randomUUID().toString())
         bridge.remember(place(2))
+        assertEquals(SyncState.Pending, bridge.state)
         assertEquals(SyncState.Synced, bridge.flush())
         assertEquals(place(2).getString("cfi"), server.row.getString("cfi"))
         bridge.remember(place(2))
+        assertEquals(SyncState.Synced, bridge.state)
         assertEquals(SyncState.Synced, bridge.flush())
         assertEquals(1, server.writes)
+    }
+
+    @Test fun transportFailureKeepsLatestCheckpointUntilVerifiedRetry() = runBlocking {
+        val server = Server(place(2))
+        val bridge = ReadingSync.open(server, server.progress(), preferences(), UUID.randomUUID().toString())
+        server.offline = true
+        bridge.remember(place(4))
+        try { bridge.flush(); fail("Expected network error") } catch (_: java.io.IOException) { }
+        assertEquals(SyncState.Unavailable, bridge.state)
+        bridge.remember(place(6))
+        assertEquals(SyncState.Unavailable, bridge.state)
+        server.offline = false
+        assertEquals(SyncState.Synced, bridge.flush())
+        assertEquals(1, server.writes)
+        assertEquals(place(6).getString("cfi"), server.row.getString("cfi"))
     }
 
     @Test fun secondDeviceMovedWhileOfflineOffersBothPositionsAndChecksAgainOnConfirmation() = runBlocking {
@@ -98,6 +119,18 @@ class ReadingSyncTest {
         assertEquals(0, server.writes)
     }
 
+    @Test fun firstSuccessfulReadAdoptsTheServerWhenThereIsNoLocalCheckpoint() = runBlocking {
+        val server = Server(place(6))
+        val bridge = ReadingSync.open(server, null, preferences(), UUID.randomUUID().toString())
+        server.offline = true
+        try { bridge.refresh(); fail("Expected network error") } catch (_: java.io.IOException) { }
+        assertEquals(SyncState.Unavailable, bridge.flush())
+        server.offline = false
+        assertEquals(SyncState.Synced, bridge.refresh())
+        assertEquals(place(6).getString("cfi"), bridge.resume!!.getString("cfi"))
+        assertEquals(0, server.writes)
+    }
+
     @Test fun serverVersionDeterminesWhetherNarrationFieldsAreNeededForTextWrites() {
         val legacy = JSONObject().put("mediaOverlayFragment", "chapter.xhtml#first")
             .put("koreaderProgress", "locator").put("percentage", 1.0)
@@ -118,7 +151,7 @@ class ReadingSyncTest {
         val writes = mutableListOf<String>()
         var afterNarration: (() -> Unit)? = null
         override fun progress() = JSONObject(row.toString())
-        override fun updateProgress(body: JSONObject): JSONObject {
+        override fun updateProgress(body: JSONObject, previous: JSONObject): ProgressReceipt? {
             val source = body.getString("source")
             writes.add(source)
             if (source == "narration") {
@@ -131,7 +164,7 @@ class ReadingSyncTest {
                 row.put("cfi", body.getString("cfi")).put("percentage", body.getDouble("percentage"))
                     .put("textUpdatedAt", "2026-11-24T09:00:01Z")
             }
-            return JSONObject()
+            return null
         }
     }
 

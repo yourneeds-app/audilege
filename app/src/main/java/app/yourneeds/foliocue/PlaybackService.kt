@@ -17,8 +17,9 @@ import kotlinx.coroutines.*
 class PlaybackService : Service() {
     private lateinit var session: MediaSession
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val covers = CoverStore()
     private var artwork: Bitmap? = null
-    private var artFile: String? = null
+    private var artKey: String? = null
     private var artJob: Job? = null
     private var lastUpdate = 0L
     private var currentChapter = -1
@@ -96,17 +97,15 @@ class PlaybackService : Service() {
         updateAudioOutput()
         val opened = player.activeBook ?: return
         val now = SystemClock.elapsedRealtime()
-        val path = opened.file.absolutePath
-        val changed = path != artFile || currentChapter != player.chapter
-        if (path != artFile) {
-            artFile = path
+        val key = listeningCoverKey(opened.file, opened.publication, opened.online)
+        val changed = key != artKey || currentChapter != player.chapter
+        if (key != artKey) {
+            artKey = key
             artwork = null
             artJob?.cancel()
             artJob = scope.launch {
-                val bitmap = CoverStore().get("notification:$path") {
-                    playerCover(opened.publication, opened.online)
-                }
-                if (artFile == path && bitmap != null) {
+                val bitmap = covers.get(key, listeningCoverSources(opened.publication, opened.online))
+                if (artKey == key && bitmap != null) {
                     val factor = minOf(1.0, 320.0 / maxOf(bitmap.width, bitmap.height))
                     artwork = Bitmap.createScaledBitmap(bitmap, (bitmap.width * factor).toInt().coerceAtLeast(1),
                         (bitmap.height * factor).toInt().coerceAtLeast(1),true)
@@ -210,8 +209,7 @@ class PlaybackService : Service() {
     }
 
     private fun chapterLabel(opened: OpenBook): String {
-        val item = opened.publication.spine.getOrNull(player.chapter)
-        return opened.publication.contents.firstOrNull { it.path == item?.path }?.label?.takeIf { it.isNotBlank() }
+        return opened.publication.chapterTitle(player.chapter)
             ?: getString(R.string.audio_chapter,player.chapter + 1)
     }
 
