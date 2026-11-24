@@ -38,10 +38,37 @@ internal class OrbitCatalog(
     @Volatile private var groupedProgress: Boolean? = null
     override val statisticsIdentity: String = keyOf("${profile.api}\n${profile.user}")
 
+    override fun statisticsTimezone(): String = withSession { token ->
+        val account = json(URI("$api/auth/me"), null, token)
+        statisticsZone(account.optJSONObject("settings")?.optString("timezone")).id
+    }
+
+    override fun statisticsDaily(): JSONObject = withSession { token ->
+        val rows = request(URI("$api/user-statistics/daily-reading?days=3650"), null, token) {
+            org.json.JSONArray(it.bufferedReader(Charsets.UTF_8).readText())
+        }
+        JSONObject().apply {
+            for (index in 0 until rows.length()) {
+                val row = rows.getJSONObject(index)
+                val day = java.time.LocalDate.parse(row.getString("day")).toString()
+                val seconds = row.getLong("readingSeconds")
+                require(seconds >= 0 && !has(day))
+                put(day, Math.multiplyExact(seconds, 1000))
+            }
+        }
+    }
+
+    override fun statisticsOverview(): JSONObject = withSession { token ->
+        json(URI("$api/user-statistics/summary"), null, token).also { data ->
+            for (field in listOf("trackedBooks", "startedBooks", "inProgressBooks", "completedBooks")) require(data.getInt(field) >= 0)
+        }
+    }
+
     override fun statisticsBooks(): List<StatisticsBook> = withSession { token ->
         val books = linkedMapOf<Long, StatisticsBook>()
         var page = 0
         var total: Int
+        var expectedTotal: Int? = null
         do {
             val body = JSONObject().put("pagination", JSONObject().put("page", page).put("size", PAGE_SIZE))
                 .put("collapseSeries", false).put("collapseLinked", false)
@@ -49,14 +76,18 @@ internal class OrbitCatalog(
             val response = json(profile.catalog, body, token)
             val items = response.getJSONArray("items")
             total = response.getInt("total")
+            require(expectedTotal == null || expectedTotal == total)
+            expectedTotal = total
             require(total >= 0 && (items.length() > 0 || page * PAGE_SIZE >= total))
             items.objects().forEach { book ->
                 val id = book.getLong("id")
                 require(id > 0)
+                require(!books.containsKey(id))
                 books[id] = StatisticsBook(id, book.optString("title"), author(book))
             }
             page++
         } while (page.toLong() * PAGE_SIZE < total)
+        require(books.size == total)
         books.values.toList()
     }
 

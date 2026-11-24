@@ -1,0 +1,11 @@
+<resources>
+    <string name="activity_all">All activity</string>
+    <string name="activity_read">Reading</string>
+    <string name="activity_listen">Audiobooks</string>
+    <string name="activity_tts">Read aloud</string>
+    <string name="activity_server_hint">Activity saved in your BookOrbit account, across all devices. Earlier app-only statistics are not used. New activity appears after the server confirms it.</string>
+    <string name="activity_account_required">Choose a BookOrbit account profile to sync reading, audiobook and read-aloud statistics.</string>
+    <string name="activity_timezone">BookOrbit timezone: %1$s</string>
+    <string name="activity_completed_total">Completed books on BookOrbit, all time: %1$d</string>
+    <string name="activity_unknown_hint">Some server sessions have no recognized activity type. They count under All activity only.</string>
+</resources>

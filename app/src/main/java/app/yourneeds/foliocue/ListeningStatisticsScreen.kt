@@ -31,21 +31,22 @@ import kotlinx.coroutines.launch
 internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, catalog: OrbitCatalog? = null, close: () -> Unit) {
     val store = remember { ListeningStats(context) }
     val covers = remember { CoverStore() }
-    var localOnly by rememberSaveable(profile?.id) { mutableStateOf(false) }
     val profileId = profile?.id ?: "local"
     val identity = catalog?.statisticsIdentity
-    val selectedIdentity = identity.takeUnless { localOnly }
-    var summary by remember(profileId, selectedIdentity) { mutableStateOf(store.summary(profileId, selectedIdentity)) }
+    var kindName by rememberSaveable(profileId) { mutableStateOf(ActivityKind.ALL.name) }
+    val kind = ActivityKind.valueOf(kindName)
+    var refresh by remember { mutableIntStateOf(0) }
+    val summary = remember(profileId, identity, kind, refresh) { store.summary(profileId, identity, kind.wire) }
     var syncInfo by remember(profileId, identity) { mutableStateOf(identity?.let { store.syncInfo(profileId, it) }) }
     var syncing by remember { mutableStateOf(false) }
     var periodName by rememberSaveable { mutableStateOf(ListeningPeriod.YEAR.name) }
-    var anchorText by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
+    var anchorText by rememberSaveable(profileId) { mutableStateOf<String?>(null) }
     val period = ListeningPeriod.valueOf(periodName)
-    val anchor = LocalDate.parse(anchorText)
-    val today = LocalDate.now()
+    val today = LocalDate.now(statisticsZone(summary.timezone))
+    val anchor = anchorText?.let(LocalDate::parse) ?: today
     val recap = remember(summary, period, anchor, today) { listeningRecap(summary, period,
         if (period == ListeningPeriod.ALL) today else anchor, today) }
-    var allBooks by remember(period, anchor, selectedIdentity) { mutableStateOf(false) }
+    var allBooks by remember(period, anchor, identity, kind) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     suspend fun synchronize() {
         if (catalog == null || syncing) return
@@ -53,7 +54,7 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
         try { store.synchronize(profileId, catalog, discover = true) }
         finally {
             syncInfo = store.syncInfo(profileId, catalog.statisticsIdentity)
-            summary = store.summary(profileId, selectedIdentity)
+            refresh++
             syncing = false
         }
     }
@@ -63,12 +64,21 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
             delay(300_000)
         }
     }
-    LaunchedEffect(profileId, selectedIdentity) {
+    LaunchedEffect(profileId, identity) {
         while (true) {
             delay(5000)
-            summary = store.summary(profileId, selectedIdentity)
+            refresh++
             syncInfo = identity?.let { store.syncInfo(profileId, it) }
         }
+    }
+    if (identity == null) {
+        Surface(Modifier.fillMaxSize()) {
+            Column(Modifier.safeDrawingPadding()) {
+                FolioBar(stringResource(R.string.listening_statistics), back = close)
+                Text(stringResource(R.string.activity_account_required), Modifier.padding(20.dp))
+            }
+        }
+        return
     }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.safeDrawingPadding()) {
@@ -77,14 +87,10 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
                 item {
                     Text(profile?.label ?: stringResource(R.string.local), style = MaterialTheme.typography.titleMedium)
                     profile?.let { Text(it.user, style = MaterialTheme.typography.bodyMedium) }
-                    if (identity != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(selected = !localOnly, onClick = { localOnly = false }, label = { Text("BookOrbit") })
-                        FilterChip(selected = localOnly, onClick = { localOnly = true }, label = { Text(stringResource(R.string.statistics_device_only)) })
-                    }
-                    Text(stringResource(if (selectedIdentity != null) R.string.statistics_cloud_hint else R.string.statistics_local_hint),
+                    Text(stringResource(R.string.activity_server_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (selectedIdentity != null) {
+                    run {
                         val info = syncInfo
                         Text(stringResource(when {
                             syncing -> R.string.statistics_syncing
@@ -98,7 +104,17 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
                         TextButton(onClick = { scope.launch { synchronize() } }, enabled = !syncing) {
                             Text(stringResource(R.string.statistics_sync_now))
                         }
+                        info?.timezone?.let { Text(stringResource(R.string.activity_timezone, it), style = MaterialTheme.typography.bodySmall) }
+                        info?.completedBooks?.let { Text(stringResource(R.string.activity_completed_total, it), style = MaterialTheme.typography.bodySmall) }
                     }
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ActivityKind.entries.forEach { option ->
+                            FilterChip(selected = kind == option, onClick = { kindName = option.name },
+                                label = { Text(stringResource(option.label)) })
+                        }
+                    }
+                    if (summary.unknownMillis > 0) Text(stringResource(R.string.activity_unknown_hint),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 item {
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -154,7 +170,7 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
                 item {
                     Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         StatisticTile(stringResource(R.string.statistics_daily_average), listeningTimeLabel(recap.average), Modifier.weight(1f).fillMaxHeight())
-                        StatisticTile(stringResource(R.string.statistics_best_streak), recap.bestStreak.toString(), Modifier.weight(1f).fillMaxHeight())
+                        StatisticTile(stringResource(R.string.statistics_best_streak), summary.bestStreak.toString(), Modifier.weight(1f).fillMaxHeight())
                     }
                     Text(stringResource(R.string.statistics_streak_hint), style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)

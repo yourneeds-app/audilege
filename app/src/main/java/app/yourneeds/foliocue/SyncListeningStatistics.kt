@@ -13,7 +13,7 @@ internal fun SyncListeningStatistics(profile: Profile?, catalog: OrbitCatalog?) 
     LaunchedEffect(profile, catalog) {
         if (profile == null || catalog == null) return@LaunchedEffect
         while (true) {
-            store.synchronize(profile.id, catalog, discover = false)
+            store.synchronize(profile.id, catalog, discover = store.syncInfo(profile.id, catalog.statisticsIdentity).lastSync == 0L)
             delay(60_000)
         }
     }

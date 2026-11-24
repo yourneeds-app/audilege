@@ -18,7 +18,7 @@ class OrbitStatisticsApiTest {
         val event = ListeningEvent("audilege-fixture-session", 41, 8, "Fictional title", "Fixture author", start, start + 15_000, 15_000)
         val worker = thread(isDaemon = true) {
             try {
-                repeat(3) {
+                repeat(7) {
                     server.accept().use { socket ->
                         socket.soTimeout = 5000
                         val input = socket.getInputStream().bufferedReader()
@@ -29,6 +29,9 @@ class OrbitStatisticsApiTest {
                         assertEquals("Bearer fixture-access", headers["authorization"])
                         val body = buildString { repeat(headers["content-length"]?.toInt() ?: 0) { append(input.read().toChar()) } }
                         val (status, response) = when {
+                            first.startsWith("GET /api/v1/auth/me ") -> 200 to """{"settings":{"timezone":"Europe/Berlin"}}"""
+                            first.startsWith("GET /api/v1/user-statistics/daily-reading?") -> 200 to """[{"day":"2026-11-24","readingSeconds":15}]"""
+                            first.startsWith("GET /api/v1/user-statistics/summary ") -> 200 to """{"trackedBooks":1,"startedBooks":1,"inProgressBooks":1,"completedBooks":0,"meanProgressPercent":1.0}"""
                             first.startsWith("POST /api/v1/books/query ") -> {
                                 assertEquals(0, JSONObject(body).getJSONObject("pagination").getInt("page"))
                                 200 to """{"items":[{"id":41,"title":"Fictional title","metadata":{"authors":["Fixture author"]}}],"total":1}"""
@@ -65,7 +68,9 @@ class OrbitStatisticsApiTest {
             val result = synchronizeListening(catalog, listOf(event), discover = true)
             assertEquals(setOf(event.id), result.uploaded.keys)
             assertEquals(15_000L, result.books.getValue(41).getJSONObject("books").getJSONObject("orbit:41").getLong("millis"))
-            assertEquals(3, calls.size)
+            assertEquals(7, calls.size)
+            assertEquals("Europe/Berlin", result.timezone)
+            assertEquals(15_000L, result.serverDays!!.getLong("2026-11-24"))
             assertTrue(failures.isEmpty())
             assertNotEquals(catalog.statisticsIdentity,
                 OrbitCatalog(profile.copy(user = "another-reader"), "{}").statisticsIdentity)

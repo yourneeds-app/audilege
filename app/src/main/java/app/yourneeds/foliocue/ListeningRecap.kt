@@ -30,11 +30,12 @@ internal fun listeningRecap(summary: ListeningSummary, period: ListeningPeriod, 
     val range = listeningRange(period, minOf(anchor, today), first)
     val days = history.filter { it.date >= range.start && it.date <= range.end }
     val total = days.sumOf { it.millis }
-    val active = days.filter { it.millis >= 60_000 }.map { it.date }.toSortedSet()
+    val active = days.filter { it.millis >= summary.activityThreshold }.map { it.date }.toSortedSet()
+    val streakDates = summary.streakDays?.filter { it >= range.start && it <= minOf(range.end, today) }?.sorted() ?: active.toList()
     var best = 0
     var streak = 0
     var previous: LocalDate? = null
-    for (date in active) {
+    for (date in streakDates) {
         streak = if (previous?.plusDays(1) == date) streak + 1 else 1
         best = maxOf(best, streak)
         previous = date

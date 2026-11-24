@@ -131,7 +131,7 @@ class ListeningStatsSyncTest {
         assertEquals(30_000L, total(account))
     }
 
-    @Test fun readingAndUnknownMediaNeverCountAsListening() {
+    @Test fun readingAndUnknownMediaAreKeptSeparatelyFromAudiobooks() {
         val endpoint = object : ListeningStatisticsEndpoint {
             override val statisticsIdentity = "test"
             override fun statisticsBooks() = listOf(StatisticsBook(41, "Fixture", ""))
@@ -143,7 +143,10 @@ class ListeningStatsSyncTest {
         }
         val account = JSONObject()
         commitListeningSync(account, synchronizeListening(endpoint, emptyList(), true), time)
-        assertEquals(30_000L, total(account))
+        assertEquals(90_000L, total(account))
+        assertEquals(30_000L, listeningSummary(serverActivityData(account, "listen"), today).total)
+        assertEquals(30_000L, listeningSummary(serverActivityData(account, "read"), today).total)
+        assertEquals(30_000L, listeningSummary(serverActivityData(account, "unknown"), today).total)
     }
 
     @Test fun paginationChangesRejectTheSnapshotRatherThanPublishingPartialTotals() {

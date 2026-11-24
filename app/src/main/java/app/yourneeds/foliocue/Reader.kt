@@ -35,6 +35,8 @@ internal class ReaderPage(
     private var followAudio = true
     private var paged = false
     val chapterPath get() = chapter.path
+    val isReady get() = initialized
+    var onReadingActivity: () -> Unit = {}
     var onPageTap: () -> Unit = {}
     var onBrowse: () -> Unit = {}
     var onPassage: (PagePassage) -> Unit = {}
@@ -117,6 +119,7 @@ internal class ReaderPage(
                     override fun onComplete(requestId: Long) {
                         navigateToStart()
                         initialized = true
+                        onReadingActivity()
                         flushHighlight()
                         readyToShow?.invoke()
                         readyToShow = null
@@ -133,6 +136,7 @@ internal class ReaderPage(
 
     @android.annotation.SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) onReadingActivity()
         gestures.onTouchEvent(event)
         return super.onTouchEvent(event)
     }
@@ -141,6 +145,7 @@ internal class ReaderPage(
         if (action == android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD ||
             action == android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) {
             touchScrolling = true
+            onReadingActivity()
             if (followAudio) onBrowse()
         }
         return super.performAccessibilityAction(action, arguments)
@@ -152,6 +157,7 @@ internal class ReaderPage(
     }
 
     fun turn(direction: Int) {
+        onReadingActivity()
         onBrowse()
         touchScrolling = true
         if (!canScrollVertically(direction)) onTurnAtEdge(direction)

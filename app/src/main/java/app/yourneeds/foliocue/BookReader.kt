@@ -115,6 +115,9 @@ internal fun BookReader(
     val audioError = attached && playback.failed
     var listenJump by remember(book, mode) { mutableStateOf<ListenJump?>(null) }
     var audioRetry by remember { mutableIntStateOf(0) }
+    var readingInteraction by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
+    TrackReadingActivity(activity, openedAudio, mode == Mode.Read && view?.isReady == true &&
+        !chapterFailed && dialog == null && selectedPassage == null, readingInteraction, ownerScope)
 
 
     suspend fun syncPending(force: Boolean = false, userInitiated: Boolean = false) {
@@ -493,6 +496,7 @@ internal fun BookReader(
                             })
                                 .also { page ->
                                     view = page
+                                    page.onReadingActivity = { readingInteraction = android.os.SystemClock.elapsedRealtime() }
                                     page.onPageTap = { controls = !controls }
                                     page.onBrowse = {
                                         if (mode == Mode.Follow && inspection == null) {

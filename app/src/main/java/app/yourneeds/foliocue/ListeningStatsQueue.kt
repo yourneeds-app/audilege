@@ -9,8 +9,8 @@ import org.json.JSONObject
 internal fun JSONObject.objectAt(key: String): JSONObject = optJSONObject(key) ?: JSONObject().also { put(key, it) }
 internal fun statisticsAccount(root: JSONObject, identity: String): JSONObject = root.objectAt("accounts").objectAt(identity)
 
-private fun newEvent(bookId: Long, fileId: Long, title: String, author: String, start: Long, end: Long, millis: Long) =
-    ListeningEvent("audilege-${UUID.randomUUID()}", bookId, fileId, title, author, start, end, millis)
+private fun newEvent(bookId: Long, fileId: Long, title: String, author: String, start: Long, end: Long, millis: Long, kind: String = "listen") =
+    ListeningEvent("audilege-${UUID.randomUUID()}", bookId, fileId, title, author, start, end, millis, kind)
 
 /** The server requires ten seconds. Keep shorter intervals durable until they can be combined. */
 private fun sealDraft(account: JSONObject, key: String) {
@@ -24,23 +24,24 @@ private fun sealDraft(account: JSONObject, key: String) {
     val remainder = event.millis - posted.millis
     if (remainder == 0L) drafts.remove(key)
     else drafts.put(key, newEvent(event.bookId, event.fileId, event.title, event.author,
-        event.end - remainder, event.end, remainder).json())
+        event.end - remainder, event.end, remainder, event.kind).json())
 }
 
 internal fun queueListening(account: JSONObject, bookId: Long, fileId: Long, title: String, author: String,
-                           end: Long, millis: Long, zone: ZoneId = ZoneId.systemDefault()) {
+                           end: Long, millis: Long, zone: ZoneId = ZoneId.of("UTC"), kind: String = "listen") {
     if (bookId <= 0 || fileId <= 0 || millis <= 0 || millis > 60_000) return
+    require(kind in setOf("read", "listen", "tts"))
     var from = end - millis
     while (from < end) {
         val day = Instant.ofEpochMilli(from).atZone(zone).toLocalDate()
         val until = minOf(end, day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli())
-        val key = "$bookId:$fileId:$day"
+        val key = "$kind:$bookId:$fileId:$day"
         val drafts = account.objectAt("drafts")
         val old = drafts.optJSONObject(key)?.let(ListeningEvent::parse)
         val duration = (old?.millis ?: 0) + until - from
         val event = old?.copy(title = title, author = author, end = maxOf(old.end, until), millis = duration,
             start = minOf(old.start, until - duration))
-            ?: newEvent(bookId, fileId, title, author, from, until, until - from)
+            ?: newEvent(bookId, fileId, title, author, from, until, until - from, kind)
         drafts.put(key, event.json())
         if (event.millis >= 30_000) sealDraft(account, key)
         from = until
@@ -95,5 +96,8 @@ internal fun commitListeningSync(account: JSONObject, result: ListeningSyncResul
         if (outbox.optJSONObject(id)?.let(ListeningEvent::parse) == event) outbox.remove(id)
     }
     account.put("serverBooks", server)
+    account.put("timezone", result.timezone)
+    result.serverDays?.let { account.put("serverDays", it) }
+    result.overview?.let { account.put("overview", it) }
     account.put("lastSync", now).remove("syncError")
 }

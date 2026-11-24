@@ -38,6 +38,8 @@ internal data class ListeningSummary(
     val total: Long, val today: Long, val week: Long, val currentStreak: Int, val bestStreak: Int,
     val books: List<BookListening>, val days: List<ListeningDay> = emptyList(),
     val history: List<ListeningDay> = days,
+    val activityThreshold: Long = 60_000, val timezone: String = "UTC",
+    val streakDays: Set<LocalDate>? = null, val unknownMillis: Long = 0,
 )
 
 internal fun listeningBars(days: List<ListeningDay>, weekly: Boolean): List<ListeningBar> =
@@ -45,13 +47,12 @@ internal fun listeningBars(days: List<ListeningDay>, weekly: Boolean): List<List
         ListeningBar(week.first().date, week.last().date, week.sumOf { it.millis })
     } else days.takeLast(7).map { ListeningBar(it.date, it.date, it.millis) }
 
-internal fun listeningSummary(data: JSONObject, today: LocalDate): ListeningSummary {
+internal fun listeningSummary(data: JSONObject, today: LocalDate, minimumActivity: Long = 60_000): ListeningSummary {
     val days = data.optJSONObject("days") ?: JSONObject()
     val totals = days.keys().asSequence().mapNotNull { key ->
         runCatching { LocalDate.parse(key) to days.optLong(key).coerceAtLeast(0) }.getOrNull()
     }.toMap()
-    // One minute on a local calendar day qualifies as a listening day.
-    val active = totals.filter { it.value >= 60_000 && it.key <= today }.keys.sorted()
+    val active = totals.filter { it.value >= minimumActivity && it.key <= today }.keys.sorted()
     var best = 0
     var run = 0
     var previous: LocalDate? = null
@@ -75,7 +76,7 @@ internal fun listeningSummary(data: JSONObject, today: LocalDate): ListeningSumm
     val recentDays = (27 downTo 0).map { ago -> today.minusDays(ago.toLong()).let { ListeningDay(it, totals[it] ?: 0) } }
     return ListeningSummary(totals.values.sum(), totals[today] ?: 0,
         totals.filter { (day, _) -> day >= today.minusDays(6) && day <= today }.values.sum(), current, best, books, recentDays,
-        totals.entries.sortedBy { it.key }.map { ListeningDay(it.key, it.value) })
+        totals.entries.sortedBy { it.key }.map { ListeningDay(it.key, it.value) }, minimumActivity)
 }
 
 /** Split at local midnight so a session spanning two days can contribute to both. */
@@ -100,7 +101,8 @@ internal fun addListening(data: JSONObject, key: String, title: String, author: 
 }
 
 internal class ListeningStats(context: Context) {
-    private val prefs = context.getSharedPreferences("listening-statistics", Context.MODE_PRIVATE)
+    // Explicit user decision: ignore all previous app-only totals, caches and unsent legacy events.
+    private val prefs = context.getSharedPreferences("bookorbit-statistics-v2", Context.MODE_PRIVATE)
     private fun data(profile: String) = runCatching { JSONObject(prefs.getString(profile, "{}")!!) }.getOrElse { JSONObject() }
     private fun <T> edit(profile: String, durable: Boolean = false, operation: (JSONObject) -> T): T = synchronized(storageLock) {
         val root = data(profile)
@@ -109,29 +111,36 @@ internal class ListeningStats(context: Context) {
         if (durable) check(editor.commit()) else editor.apply()
         result
     }
-    fun record(book: OpenBook, durationMs: Long) {
+    fun record(book: OpenBook, durationMs: Long, kind: String = "listen") {
         if (durationMs <= 0) return
+        val online = book.online ?: return
         val profile = book.file.parentFile?.name ?: "local"
         edit(profile) { root ->
-            val online = book.online
-            if (online == null) addListening(root, keyOf(book.file.absolutePath), book.publication.title,
-                book.publication.author, System.currentTimeMillis(), durationMs)
-            else queueListening(statisticsAccount(root, online.catalog.statisticsIdentity), online.detail.id,
-                online.detail.fileId, book.publication.title, book.publication.author, System.currentTimeMillis(), durationMs)
+            queueListening(statisticsAccount(root, online.catalog.statisticsIdentity), online.detail.id,
+                online.detail.fileId, book.publication.title, book.publication.author, System.currentTimeMillis(), durationMs, kind = kind)
         }
     }
 
-    fun summary(profile: String, identity: String? = null): ListeningSummary = synchronized(storageLock) {
+    fun summary(profile: String, identity: String? = null, kind: String? = null): ListeningSummary = synchronized(storageLock) {
         val root = data(profile)
-        val selected = if (identity == null) root else cloudListeningData(statisticsAccount(root, identity))
-        listeningSummary(selected, LocalDate.now())
+        val account = identity?.let { statisticsAccount(root, it) } ?: JSONObject()
+        val zone = statisticsZone(account.optString("timezone", "UTC"))
+        val today = LocalDate.now(zone)
+        val activeDays = accountActiveDays(account)
+        val streak = listeningSummary(JSONObject().put("days", JSONObject().apply {
+            activeDays.forEach { put(it.toString(), 1000L) }
+        }), today, 1)
+        val unknown = listeningSummary(serverActivityData(account, "unknown"), today, 1).total
+        listeningSummary(serverActivityData(account, kind), today, 1).copy(timezone = zone.id,
+            currentStreak = streak.currentStreak, bestStreak = streak.bestStreak, streakDays = activeDays, unknownMillis = unknown)
     }
 
     fun syncInfo(profile: String, identity: String): StatisticsSyncInfo = synchronized(storageLock) {
         val account = statisticsAccount(data(profile), identity)
         val pending = account.objectAt("outbox").length() + account.objectAt("drafts").length()
         StatisticsSyncInfo(account.optLong("lastSync"), pending,
-            account.optString("syncError").takeIf(String::isNotBlank))
+            account.optString("syncError").takeIf(String::isNotBlank), account.optString("timezone").takeIf(String::isNotBlank),
+            account.optJSONObject("overview")?.let { if (it.has("completedBooks")) it.getInt("completedBooks") else null })
     }
 
     suspend fun synchronize(profile: String, endpoint: ListeningStatisticsEndpoint, discover: Boolean) {
@@ -139,13 +148,13 @@ internal class ListeningStats(context: Context) {
         withContext(Dispatchers.IO) {
             mutex.withLock {
                 try {
-                    val queued = edit(profile, durable = true) { root ->
+                    val (queued, timezone) = edit(profile, durable = true) { root ->
                         val account = statisticsAccount(root, endpoint.statisticsIdentity)
                         sealListeningDrafts(account)
-                        queuedListening(account)
+                        queuedListening(account) to account.optString("timezone")
                     }
                     if (queued.isEmpty() && !discover) return@withLock
-                    val result = synchronizeListening(endpoint, queued, discover)
+                    val result = synchronizeListening(endpoint, queued, discover, timezone)
                     edit(profile, durable = true) { root ->
                         commitListeningSync(statisticsAccount(root, endpoint.statisticsIdentity), result, System.currentTimeMillis())
                     }
@@ -170,4 +179,5 @@ internal class ListeningStats(context: Context) {
     }
 }
 
-internal data class StatisticsSyncInfo(val lastSync: Long, val pending: Int, val error: String?)
+internal data class StatisticsSyncInfo(val lastSync: Long, val pending: Int, val error: String?, val timezone: String? = null,
+                                       val completedBooks: Int? = null)
