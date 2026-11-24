@@ -1,8 +1,10 @@
 package app.yourneeds.foliocue
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.Color
 import android.media.AudioAttributes
+import android.media.AudioRouting
 import android.media.MediaPlayer
 import android.media.PlaybackParams
 import android.net.Uri
@@ -357,6 +359,7 @@ internal class Narration(
     private val onMark: (String?) -> Unit,
     private val onFailure: () -> Unit,
     private val senderGeneration: Long? = null,
+    onEqualizerUnavailable: (Boolean) -> Unit = {},
 ) {
     private val timeline = CueTimeline(cues, startIndex)
     private val clock = ChapterClock(cues)
@@ -366,6 +369,21 @@ internal class Narration(
     val anchor get() = timeline.cue.fragment
     private var player: MediaPlayer? = null
     private var remote: AirPlayTrack? = null
+    private val tonePrefs = context.getSharedPreferences("reader", Context.MODE_PRIVATE)
+    private var tone = AudiobookTone.read(tonePrefs)
+    private val equalizer = LocalPlaybackEqualizer(onEqualizerUnavailable)
+    private val toneListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == null || key == AudiobookTone.KEY) {
+            tone = AudiobookTone.read(tonePrefs)
+            remote?.setTone(tone)
+            val current = player
+            if (current != null && prepared) equalizer.apply(current, tone)
+        }
+    }
+    private val routed = AudioRouting.OnRoutingChangedListener { route ->
+        val current = player
+        if (current != null && current === route && prepared) equalizer.apply(current, tone)
+    }
     val retainsAudioFile get() = senderGeneration != null
     private var prepared = false
     private var seeking = false
@@ -376,6 +394,8 @@ internal class Narration(
     var finished = false
         private set
     private var highlighted: String? = null
+
+    init { tonePrefs.registerOnSharedPreferenceChangeListener(toneListener) }
 
     fun progress(): TrackProgress {
         val ms = if (prepared && !seeking) remote?.currentPosition ?: player?.currentPosition ?: startMs else startMs
@@ -400,6 +420,7 @@ internal class Narration(
     private fun attachRemote(create: () -> AirPlayTrack) {
         closePlayer()
         remote = create()
+        remote?.setTone(tone)
         prepared = true
         remote?.seek(startMs, clock.mediaEnd(index), wantsPlayback, tempo)
     }
@@ -429,6 +450,8 @@ internal class Narration(
                 current.prepareAsync()
             }
             prepared = true
+            try { current.addOnRoutingChangedListener(routed, null) } catch (_: RuntimeException) { }
+            equalizer.apply(current, tone)
             current.setOnErrorListener { failed, _, _ ->
                 if (failed === player) onFailure()
                 true
@@ -536,11 +559,18 @@ internal class Narration(
         remote = null
         val current = player
         player = null
+        equalizer.close()
+        if (current != null) {
+            try { current.removeOnRoutingChangedListener(routed) } catch (_: RuntimeException) { }
+        }
         current?.release()
         ended = false
         prepared = false
         seeking = false
     }
 
-    fun close() = closePlayer()
+    fun close() {
+        tonePrefs.unregisterOnSharedPreferenceChangeListener(toneListener)
+        closePlayer()
+    }
 }

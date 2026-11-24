@@ -41,6 +41,8 @@ internal object AudilegePlayback {
         private set
     var outputVolume by mutableIntStateOf(25)
         private set
+    var localEqualizerUnavailable by mutableStateOf(false)
+        private set
     private var sync: ReadingSync? = null
     private val flushing = mutableSetOf<ReadingSync>()
     private var readerVisible = false
@@ -289,7 +291,9 @@ internal object AudilegePlayback {
                 val marked = resolvedAnchor?.let { target -> marks.indexOfFirst { it.fragment == target }.takeIf { it >= 0 } }
                 val saved = prefs?.getInt("$key.cue.$index", 0) ?: 0
                 val fallback = if (resumeSaved && anchor == null && cfi == null) saved else 0
-                val engine = Narration(ctx, marks, marked ?: fallback, { marker = it }, ::onFailure, remoteGeneration)
+                val engine = Narration(ctx, marks, marked ?: fallback, { marker = it }, ::onFailure, remoteGeneration) {
+                    localEqualizerUnavailable = it
+                }
                 narration = engine
                 if (elapsedOverride != null) {
                     engine.seek(elapsedOverride)

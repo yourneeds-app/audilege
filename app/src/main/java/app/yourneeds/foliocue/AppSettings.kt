@@ -396,6 +396,7 @@ internal fun SettingsScreen(
                         listOf(R.string.audio_off, R.string.design_5s, R.string.design_10s, R.string.design_15s, R.string.design_30s),
                         rewindOptions.indexOf(resumeRewind).coerceAtLeast(0),
                     ) { prefs.edit().putInt("resumeRewindSeconds", rewindOptions[it]).apply() }
+                    AudiobookEqualizerSetting(prefs)
                 }
                 SettingsGroup(R.string.language, expanded == R.string.language, { expand(R.string.language) }) {
                     val options = listOf("", "de", "en")

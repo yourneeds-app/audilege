@@ -485,8 +485,12 @@ internal fun BookReader(
     LaunchedEffect(view, mode, inspection) { view?.setFollowing(mode == Mode.Follow && inspection == null) }
 
     val colors = if (mode == Mode.Listen) MaterialTheme.colorScheme else appearanceColors(paper, accent)
-    val readerMenu = (if (book.spine.any { it.overlay.isNotBlank() })
-        listOf(MenuItem(R.string.player_modes) { dialog = R.string.player_modes }) else emptyList()) + listOf(
+    val readerMenu = buildList {
+        if (book.spine.any { it.overlay.isNotBlank() })
+            add(MenuItem(R.string.player_modes) { dialog = R.string.player_modes })
+        if (mode == Mode.Listen || mode == Mode.Follow)
+            add(MenuItem(R.string.eq_title) { dialog = R.string.eq_title })
+    } + listOf(
         MenuItem(R.string.reader_search) { dialog = R.string.reader_search },
         MenuItem(R.string.reader_bookmarks) { dialog = R.string.reader_bookmarks },
     ) + (if (history.isNotEmpty()) listOf(MenuItem(R.string.reader_last_place) {
@@ -675,7 +679,8 @@ internal fun BookReader(
 
     dialog?.let { title ->
         val choose: (ReaderTarget) -> Unit = { target -> dialog = null; visit(target) }
-        if (title == R.string.reader_search) ReaderSearchDialog(book, choose) { dialog = null }
+        if (title == R.string.eq_title) AudiobookEqualizerDialog(prefs) { dialog = null }
+        else if (title == R.string.reader_search) ReaderSearchDialog(book, choose) { dialog = null }
         else if (title == R.string.reader_bookmarks) ReaderBookmarksDialog(book, marks,
             add = { captureVisible(::addBookmark) }, open = choose, remove = { mark ->
                 marks = marks - mark

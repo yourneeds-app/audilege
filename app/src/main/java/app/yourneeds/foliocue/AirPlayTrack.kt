@@ -39,6 +39,7 @@ internal class AirPlayTrack(
 ) {
     private var decoder: ExoPlayer? = null
     private var tap: SenderProcessor? = null
+    private var tone = AudiobookTone()
     private var clock: AirPlayClock? = null
     private var heldMs = 0
     private var endMs = 0
@@ -54,6 +55,11 @@ internal class AirPlayTrack(
         return lastHeard
     }
     val ended: Boolean get() = decoderEnded && clock?.drained(backlogMs) == true
+
+    fun setTone(value: AudiobookTone) {
+        tone = value
+        tap?.tone = value
+    }
 
     fun seek(positionMs: Int, throughMs: Int, play: Boolean, speed: Float) {
         discardDecoder()
@@ -76,7 +82,7 @@ internal class AirPlayTrack(
         if (AirPlaySender.generation != generation || !AirPlaySender.connected) return
         tempo = speed
         val timing = AirPlayClock(heldMs, speed, AirPlaySender.receiverDelayMillis())
-        val processor = SenderProcessor(generation, timing, AirPlaySender::write)
+        val processor = SenderProcessor(generation, timing, AirPlaySender::write).also { it.tone = tone }
         clock = timing
         tap = processor
         val renderer = object : DefaultRenderersFactory(context) {
@@ -163,8 +169,11 @@ internal class SenderProcessor(
     private val clock: AirPlayClock,
     private val write: (ShortArray, Int, Long) -> Boolean,
 ) : BaseAudioProcessor() {
+    @Volatile var tone = AudiobookTone()
     private var enabled = true
     private var samples = ShortArray(0)
+    private var pendingFrames = 0
+    private var filter: AirPlayToneFilter? = null
 
     @Synchronized fun stopWrites() { enabled = false }
 
@@ -175,21 +184,34 @@ internal class SenderProcessor(
         return inputAudioFormat
     }
 
+    override fun onFlush() {
+        pendingFrames = 0
+        filter = inputAudioFormat.sampleRate.takeIf { it > 0 }?.let(::AirPlayToneFilter)
+    }
+
     @Synchronized override fun queueInput(input: ByteBuffer) {
         if (!enabled) return
         val channels = inputAudioFormat.channelCount
-        val frames = minOf(1024, input.remaining() / (2 * channels))
-        if (frames == 0) return
-        if (samples.size != frames * 2) samples = ShortArray(frames * 2)
-        val pcm = input.duplicate().order(ByteOrder.nativeOrder())
-        for (frame in 0 until frames) {
-            val left = pcm.short
-            samples[frame * 2] = left
-            samples[frame * 2 + 1] = if (channels == 1) left else pcm.short
+        val available = input.remaining() / (2 * channels)
+        if (available == 0 || available < pendingFrames) return
+        if (pendingFrames == 0) {
+            val frames = minOf(1024, available)
+            if (samples.size != frames * 2) samples = ShortArray(frames * 2)
+            val pcm = input.duplicate().order(ByteOrder.nativeOrder())
+            for (frame in 0 until frames) {
+                val left = pcm.short
+                samples[frame * 2] = left
+                samples[frame * 2 + 1] = if (channels == 1) left else pcm.short
+            }
+            filter?.apply(samples, tone)
+            pendingFrames = frames
         }
+        // A full sender queue retries the same filtered samples without advancing the filters twice.
         if (!write(samples, inputAudioFormat.sampleRate, generation)) return
+        val frames = pendingFrames
+        pendingFrames = 0
         clock.submitted(frames, inputAudioFormat.sampleRate)
-        input.position(pcm.position())
+        input.position(input.position() + frames * channels * 2)
         val silence = replaceOutputBuffer(frames * channels * 2)
         silence.limit(frames * channels * 2)
         while (silence.remaining() >= 8) silence.putLong(0L)

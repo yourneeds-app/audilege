@@ -1,0 +1,16 @@
+<resources>
+    <string name="eq_title">Hörbuch-Equalizer</string>
+    <string name="eq_original">Die Aufnahme im Originalklang hören.</string>
+    <string name="eq_clear">Klare Stimme</string>
+    <string name="eq_clear_detail">Hebt die Stimme bei dumpfen Aufnahmen hervor.</string>
+    <string name="eq_warm">Warme Stimme</string>
+    <string name="eq_warm_detail">Gibt dünn klingenden Stimmen mehr Tiefe.</string>
+    <string name="eq_gentle">Sanfte Höhen</string>
+    <string name="eq_gentle_detail">Mildert scharfe S-Laute.</string>
+    <string name="eq_fine_tune">Feinabstimmung</string>
+    <string name="eq_custom">Individuell</string>
+    <string name="eq_bass">Tiefen</string>
+    <string name="eq_presence">Stimmpräsenz</string>
+    <string name="eq_treble">Höhen</string>
+    <string name="eq_unavailable">Der Equalizer ist für diese Audioausgabe nicht verfügbar. Deine Klangeinstellungen sind gespeichert.</string>
+</resources>

@@ -1,0 +1,16 @@
+<resources>
+    <string name="eq_title">Audiobook equalizer</string>
+    <string name="eq_original">Play the original recording.</string>
+    <string name="eq_clear">Clear voice</string>
+    <string name="eq_clear_detail">Bring speech forward in muffled recordings.</string>
+    <string name="eq_warm">Warm voice</string>
+    <string name="eq_warm_detail">Give thin voices more depth.</string>
+    <string name="eq_gentle">Gentle treble</string>
+    <string name="eq_gentle_detail">Soften sharp S sounds.</string>
+    <string name="eq_fine_tune">Fine-tune</string>
+    <string name="eq_custom">Custom</string>
+    <string name="eq_bass">Bass</string>
+    <string name="eq_presence">Voice presence</string>
+    <string name="eq_treble">Treble</string>
+    <string name="eq_unavailable">The equalizer is unavailable on this audio output. Your sound settings are saved.</string>
+</resources>
