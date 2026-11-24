@@ -410,10 +410,13 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
             }
         }
         FolioDrawer(stringResource(R.string.app),listOf(
-            MenuItem(R.string.shelf_profile, icon = R.drawable.shelf_profile) { if (!busy) navigate(ShelfTab.Profile) },
+            MenuItem(R.string.profile_and_server, selected = tab == ShelfTab.Profile,
+                icon = R.drawable.shelf_profile, supporting = selected?.label ?: stringResource(R.string.local)) {
+                if (!busy) navigate(ShelfTab.Profile)
+            },
             MenuItem(R.string.import_epub, icon = R.drawable.menu_upload) { if (!busy) startImport() },
             MenuItem(R.string.listening_statistics, icon = R.drawable.menu_statistics) { if (!busy) statistics = true }
-        ), brand = true, profile = selected,
+        ), brand = true,
             bottomItem = MenuItem(R.string.app_settings, icon = R.drawable.menu_settings) { if (!busy) settings = true }
         ) { menu ->
             Surface(Modifier.fillMaxSize(),color = MaterialTheme.colorScheme.background) {
@@ -426,22 +429,9 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                     Column {
                         Row(Modifier.weight(1f)) {
                             if (detail == null || split) Box(Modifier.weight(if (split && detail != null) .48f else 1f)) {
-                                if (tab == ShelfTab.Profile) Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState())) {
-                                    FolioBar(stringResource(R.string.shelf_profile),menu)
-                                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        Text(stringResource(R.string.profiles),style = MaterialTheme.typography.titleLarge)
-                                        OutlinedButton(onClick = { select(null) },enabled = !busy) { Text(stringResource(R.string.local)) }
-                                        profiles.forEach { profile ->
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                TextButton(onClick = { select(profile) },enabled = !busy,modifier = Modifier.weight(1f)) {
-                                                    Column { Text(profile.label); Text(profile.user,style = MaterialTheme.typography.bodySmall) }
-                                                }
-                                                TextButton(onClick = { profileForm(profile) },enabled = !busy) { Text(stringResource(R.string.edit)) }
-                                            }
-                                        }
-                                        Button(onClick = { profileForm(null) },enabled = !busy) { Text(stringResource(R.string.add)) }
-                                    }
-                                } else ShelfContent(tab,items,recent,covers,busy,list,
+                                if (tab == ShelfTab.Profile) ProfilesScreen(profiles, selected, busy,
+                                    openMenu = menu, select = ::select, edit = ::profileForm)
+                                else ShelfContent(tab,items,recent,covers,busy,list,
                                     setList = { list = it; display.edit().putBoolean("shelf.list",it).apply() },
                                     openMenu = menu,more = more,seeAll = { navigate(ShelfTab.Discover) },
                                     header = {

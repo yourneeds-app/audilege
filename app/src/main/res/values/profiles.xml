@@ -1,0 +1,13 @@
+<resources>
+    <string name="profile_and_server">Profile &amp; server</string>
+    <string name="profile_overview_hint">Choose the profile you want to use. Each profile keeps its own server and library.</string>
+    <string name="profile_active">Currently selected</string>
+    <string name="profile_bookorbit">BookOrbit account</string>
+    <string name="profile_opds">OPDS connection</string>
+    <string name="profile_username">Username</string>
+    <string name="profile_server_label">Server</string>
+    <string name="profile_edit_short">Edit</string>
+    <string name="profile_use">Use profile</string>
+    <string name="profile_local_hint">Imported books, without a server connection.</string>
+    <string name="profile_use_local">Use without server</string>
+</resources>

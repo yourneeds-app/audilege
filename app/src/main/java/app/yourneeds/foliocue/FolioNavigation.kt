@@ -28,12 +28,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
-internal data class MenuItem(val label: Int, val selected: Boolean = false, val icon: Int? = null, val action: () -> Unit)
+internal data class MenuItem(val label: Int, val selected: Boolean = false, val icon: Int? = null,
+                             val supporting: String? = null, val action: () -> Unit)
 
 @Composable
 internal fun FolioDrawer(
     title: String, destinations: List<MenuItem>, brand: Boolean = false,
-    profile: Profile? = null, bottomItem: MenuItem? = null,
+    bottomItem: MenuItem? = null,
     content: @Composable (() -> Unit) -> Unit,
 ) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
@@ -52,17 +53,17 @@ internal fun FolioDrawer(
                             overflow = TextOverflow.Ellipsis)
                     }
                 }
-                if (brand) Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-                    Text(profile?.label ?: stringResource(R.string.local), style = MaterialTheme.typography.titleMedium)
-                    profile?.let {
-                        Text(it.user, style = MaterialTheme.typography.bodyMedium)
-                        Text(runCatching { it.api.host }.getOrDefault(""), style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
+                Spacer(Modifier.height(12.dp))
                 destinations.forEach { item ->
                     NavigationDrawerItem(
-                        label = { Text(stringResource(item.label)) },
+                        label = {
+                            Column(Modifier.padding(vertical = 4.dp)) {
+                                Text(stringResource(item.label))
+                                item.supporting?.let { Text(it, style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            }
+                        },
                         icon = item.icon?.let { drawable -> { Icon(painterResource(drawable), null) } },
                         selected = item.selected,
                         onClick = {
