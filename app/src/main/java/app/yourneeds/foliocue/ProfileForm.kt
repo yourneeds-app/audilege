@@ -22,7 +22,6 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.contentType
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -90,15 +89,14 @@ internal fun ProfileForm(
 
     BackHandler(enabled = !busy, onBack = dismiss)
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding(), contentAlignment = Alignment.TopCenter) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding(), horizontalAlignment = Alignment.CenterHorizontally) {
+            FolioBar(stringResource(if (original == null) R.string.add else R.string.edit),
+                back = dismiss, backEnabled = !busy)
             Column(
-                Modifier.widthIn(max = 560.dp).fillMaxWidth()
-                    .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
+                Modifier.weight(1f).widthIn(max = AudilegeLayout.contentWidth).fillMaxWidth()
+                    .verticalScroll(rememberScrollState()).padding(horizontal = AudilegeLayout.pageInset, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                TextButton(enabled = !busy, onClick = dismiss) { Text(stringResource(R.string.back)) }
-                Text(stringResource(if (original == null) R.string.add else R.string.edit),
-                    style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
                 Text(stringResource(if (accountLogin) R.string.account_hint else R.string.opds_hint),
                     style = MaterialTheme.typography.bodyMedium)
 

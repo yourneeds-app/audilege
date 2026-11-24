@@ -1,6 +1,5 @@
 <resources>
     <string name="profile_and_server">Profile &amp; server</string>
-    <string name="profile_overview_hint">Choose the profile you want to use. Each profile keeps its own server and library.</string>
     <string name="profile_active">Currently selected</string>
     <string name="profile_bookorbit">BookOrbit account</string>
     <string name="profile_opds">OPDS connection</string>

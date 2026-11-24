@@ -2,13 +2,16 @@ package app.yourneeds.foliocue
 
 import android.content.Context
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -18,6 +21,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,7 +81,8 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
         Surface(Modifier.fillMaxSize()) {
             Column(Modifier.safeDrawingPadding()) {
                 FolioBar(stringResource(R.string.listening_statistics), back = close)
-                Text(stringResource(R.string.activity_account_required), Modifier.padding(20.dp))
+                Text(stringResource(R.string.activity_account_required), Modifier.align(Alignment.CenterHorizontally)
+                    .widthIn(max = AudilegeLayout.contentWidth).fillMaxWidth().padding(AudilegeLayout.pageInset))
             }
         }
         return
@@ -83,30 +90,39 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.safeDrawingPadding()) {
             FolioBar(stringResource(R.string.listening_statistics), back = close)
-            LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            LazyColumn(Modifier.align(Alignment.CenterHorizontally).widthIn(max = AudilegeLayout.contentWidth).fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = AudilegeLayout.pageInset, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 item {
-                    Text(profile?.label ?: stringResource(R.string.local), style = MaterialTheme.typography.titleMedium)
-                    profile?.let { Text(it.user, style = MaterialTheme.typography.bodyMedium) }
-                    Text(stringResource(R.string.activity_server_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    run {
-                        val info = syncInfo
-                        Text(stringResource(when {
-                            syncing -> R.string.statistics_syncing
-                            info?.error == "sign_in" -> R.string.statistics_sync_sign_in
-                            info?.error == "unsupported" -> R.string.statistics_sync_unsupported
-                            info?.error != null -> R.string.statistics_sync_offline
-                            (info?.lastSync ?: 0) > 0 -> R.string.statistics_sync_done
-                            else -> R.string.statistics_sync_pending
-                        }), style = MaterialTheme.typography.bodySmall)
-                        if ((info?.pending ?: 0) > 0) Text(stringResource(R.string.statistics_sync_collected), style = MaterialTheme.typography.bodySmall)
-                        TextButton(onClick = { scope.launch { synchronize() } }, enabled = !syncing) {
-                            Text(stringResource(R.string.statistics_sync_now))
+                    OutlinedCard(Modifier.fillMaxWidth(), shape = AudilegeLayout.cardShape) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(profile?.label ?: stringResource(R.string.local), style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.semantics { heading() })
+                            profile?.takeIf { !it.label.trim().equals(it.user.trim(), ignoreCase = true) }?.let {
+                                Text(it.user, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            val info = syncInfo
+                            Text(stringResource(when {
+                                syncing -> R.string.statistics_syncing
+                                info?.error == "sign_in" -> R.string.statistics_sync_sign_in
+                                info?.error == "unsupported" -> R.string.statistics_sync_unsupported
+                                info?.error != null -> R.string.statistics_sync_offline
+                                (info?.lastSync ?: 0) > 0 -> R.string.statistics_sync_done
+                                else -> R.string.statistics_sync_pending
+                            }), style = MaterialTheme.typography.bodyMedium,
+                                color = if (info?.error != null && !syncing) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                            if ((info?.pending ?: 0) > 0) Text(stringResource(R.string.statistics_sync_collected), style = MaterialTheme.typography.bodySmall)
+                            info?.timezone?.let { Text(stringResource(R.string.activity_timezone, it), style = MaterialTheme.typography.bodySmall) }
+                            info?.completedBooks?.let { Text(stringResource(R.string.activity_completed_total, it), style = MaterialTheme.typography.bodySmall) }
+                            TextButton(onClick = { scope.launch { synchronize() } }, enabled = !syncing) {
+                                Text(stringResource(R.string.statistics_sync_now))
+                            }
                         }
-                        info?.timezone?.let { Text(stringResource(R.string.activity_timezone, it), style = MaterialTheme.typography.bodySmall) }
-                        info?.completedBooks?.let { Text(stringResource(R.string.activity_completed_total, it), style = MaterialTheme.typography.bodySmall) }
                     }
+                }
+                item {
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ActivityKind.entries.forEach { option ->
                             FilterChip(selected = kind == option, onClick = { kindName = option.name },
@@ -137,20 +153,18 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         if (period != ListeningPeriod.ALL) IconButton(onClick = {
                             anchorText = shiftPeriod(anchor, period, -1).toString()
-                        }) { Text("‹", style = MaterialTheme.typography.headlineMedium,
-                            modifier = Modifier.semantics { contentDescription = context.getString(R.string.statistics_previous_period) }) }
+                        }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, stringResource(R.string.statistics_previous_period)) }
                         Text(rangeLabel, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f),
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                         if (period != ListeningPeriod.ALL) IconButton(onClick = {
                             anchorText = minOf(shiftPeriod(anchor, period, 1), today).toString()
                         }, enabled = shiftPeriod(recap.range.start, period, 1) <= today) {
-                            Text("›", style = MaterialTheme.typography.headlineMedium,
-                                modifier = Modifier.semantics { contentDescription = context.getString(R.string.statistics_next_period) })
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, stringResource(R.string.statistics_next_period))
                         }
                     }
                 }
                 item {
-                    Card(Modifier.fillMaxWidth()) {
+                    Card(Modifier.fillMaxWidth(), shape = AudilegeLayout.cardShape) {
                         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(stringResource(if (period == ListeningPeriod.ALL) R.string.statistics_total else R.string.statistics_period_time), style = MaterialTheme.typography.labelLarge)
                             Text(listeningTimeLabel(recap.total), style = MaterialTheme.typography.headlineLarge)
@@ -185,7 +199,7 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
                         ListeningPeriod.ALL -> if (recap.range.end.year - recap.range.start.year >= 2) "yyyy" else "LLLL yyyy"
                         else -> "EEEE, d. MMMM"
                     }
-                    OutlinedCard(Modifier.fillMaxWidth()) {
+                    OutlinedCard(Modifier.fillMaxWidth(), shape = AudilegeLayout.cardShape) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(stringResource(R.string.statistics_peak), style = MaterialTheme.typography.labelLarge)
                             Text(peak.start.format(DateTimeFormatter.ofPattern(format, locale)), style = MaterialTheme.typography.titleMedium)
@@ -194,7 +208,8 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
                     }
                 } }
                 item {
-                    Text(stringResource(R.string.statistics_top_books), style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.statistics_top_books), style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.semantics { heading() })
                     if (recap.unassignedBookTime > 0) Text(stringResource(R.string.statistics_undated_books),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -203,7 +218,7 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
                     val sources = remember(book.key, profile, catalog) {
                         statisticsCoverSources(context, profile?.id ?: "local", book.key, catalog)
                     }
-                    OutlinedCard(Modifier.fillMaxWidth()) {
+                    OutlinedCard(Modifier.fillMaxWidth(), shape = AudilegeLayout.cardShape) {
                         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text((recap.books.indexOf(book) + 1).toString(), style = MaterialTheme.typography.labelLarge,
@@ -224,9 +239,10 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
                     }
                 }
                 if (recap.authors.isNotEmpty()) {
-                    item { Text(stringResource(R.string.statistics_top_authors), style = MaterialTheme.typography.titleLarge) }
+                    item { Text(stringResource(R.string.statistics_top_authors), style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.semantics { heading() }) }
                     items(recap.authors.take(5), key = { "author:${it.name}" }) { author ->
-                        OutlinedCard(Modifier.fillMaxWidth()) {
+                        OutlinedCard(Modifier.fillMaxWidth(), shape = AudilegeLayout.cardShape) {
                             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text((recap.authors.indexOf(author) + 1).toString(), style = MaterialTheme.typography.labelLarge)
@@ -255,18 +271,22 @@ private fun ListeningChart(bars: List<ListeningBar>, period: ListeningPeriod) {
         ListeningPeriod.ALL -> if (yearly) "yyyy" else "MMM yy"
     }, locale) }
     val peak = bars.maxOfOrNull { it.millis } ?: 0
-    OutlinedCard(Modifier.fillMaxWidth()) {
+    OutlinedCard(Modifier.fillMaxWidth(), shape = AudilegeLayout.cardShape) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.statistics_chart), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.statistics_chart), style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.semantics { heading() })
             Text(listeningTimeLabel(peak), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val barWidth = maxOf(40.dp, (maxWidth - 4.dp * (bars.size - 1).coerceAtLeast(0)) / bars.size.coerceAtLeast(1))
+            val barWidth = maxOf(48.dp, (maxWidth - 4.dp * (bars.size - 1).coerceAtLeast(0)) / bars.size.coerceAtLeast(1))
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 bars.forEachIndexed { index, bar ->
                     val dateLabel = "${bar.start.format(shortDate)}–${bar.end.format(shortDate)}"
                     val duration = listeningTimeLabel(bar.millis)
-                    Column(Modifier.width(barWidth).clickable { selected = index }
+                    Column(Modifier.width(barWidth)
+                        .background(if (selected == index) MaterialTheme.colorScheme.primaryContainer
+                            else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(8.dp))
+                        .selectable(selected = selected == index, onClick = { selected = index })
                         .semantics { contentDescription = "$dateLabel: $duration" },
                         horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(Modifier.fillMaxWidth().height(128.dp), contentAlignment = Alignment.BottomCenter) {
@@ -296,8 +316,8 @@ private fun ListeningChart(bars: List<ListeningBar>, period: ListeningPeriod) {
 
 @Composable
 private fun StatisticTile(label: String, value: String, modifier: Modifier) {
-    OutlinedCard(modifier) {
-        Column(Modifier.fillMaxWidth().heightIn(min = 104.dp).padding(16.dp), verticalArrangement = Arrangement.Center) {
+    OutlinedCard(modifier, shape = AudilegeLayout.cardShape) {
+        Column(Modifier.fillMaxSize().heightIn(min = 104.dp).padding(16.dp), verticalArrangement = Arrangement.Center) {
             Text(value, style = MaterialTheme.typography.titleLarge)
             Text(label, style = MaterialTheme.typography.labelMedium)
         }

@@ -1,7 +1,6 @@
 <resources>
     <string name="app">Audilege</string>
     <string name="shelf">Library</string>
-    <string name="profiles">Servers &amp; profiles</string>
     <string name="add">Add profile</string>
     <string name="edit">Edit profile</string>
     <string name="local">On this device</string>
@@ -156,10 +155,10 @@
     <string name="license_other">Other components · notices</string>
     <string name="license_ed25519">Ed25519 · license</string>
     <string name="statistics_syncing">Syncing with BookOrbit…</string>
-    <string name="statistics_sync_sign_in">Sign in again to sync. Your listening time stays saved on this device.</string>
-    <string name="statistics_sync_unsupported">This server does not currently allow compatible statistics sync. Your listening time stays saved on this device.</string>
-    <string name="statistics_sync_offline">Not synced yet. Your listening time stays saved on this device and will be retried.</string>
-    <string name="statistics_sync_done">Synced with BookOrbit. Other devices appear after refreshing.</string>
+    <string name="statistics_sync_sign_in">Sign in again to sync your activity with BookOrbit.</string>
+    <string name="statistics_sync_unsupported">This BookOrbit server does not support statistics sync.</string>
+    <string name="statistics_sync_offline">Sync pending. Audilege will try again automatically.</string>
+    <string name="statistics_sync_done">Synced with BookOrbit.</string>
     <string name="statistics_sync_pending">Waiting for the first sync with BookOrbit.</string>
     <string name="statistics_sync_collected">New activity is collected or waiting to upload. Sessions of at least ten seconds can be saved by BookOrbit.</string>
     <string name="statistics_sync_now">Sync now</string>

@@ -115,14 +115,15 @@ internal fun SystemBarAppearance(activity: MainActivity) {
 @Composable
 internal fun FolioBar(
     title: String, openMenu: (() -> Unit)? = null, back: (() -> Unit)? = null,
-    overflow: List<MenuItem> = emptyList(), actions: @Composable RowScope.() -> Unit = {},
+    overflow: List<MenuItem> = emptyList(), backEnabled: Boolean = true,
+    backLabel: Int = R.string.back, actions: @Composable RowScope.() -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
     TopAppBar(
         title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         navigationIcon = {
-            if (back != null) IconButton(onClick = back) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.reader_back))
+            if (back != null) IconButton(onClick = back, enabled = backEnabled) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(backLabel))
             } else if (openMenu != null) IconButton(onClick = openMenu) {
                 Icon(Icons.Default.Menu, stringResource(R.string.open_menu))
             }

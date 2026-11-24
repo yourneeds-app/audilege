@@ -8,6 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -47,7 +48,7 @@ internal fun ListeningArtwork(
 ) {
     BoxWithConstraints(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         val width = minOf((maxHeight * .58f).coerceAtLeast(64.dp), maxWidth * .69f, 360.dp)
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = AudilegeLayout.pageInset, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             BookCover(book.title, covers, listeningCoverKey(file, book, online), listeningCoverSources(book, online),
                 Modifier.width(width).aspectRatio(1f))
@@ -119,7 +120,7 @@ internal fun ReaderDock(
     Surface(color = if (mode == Mode.Listen) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Column(Modifier.widthIn(max = 600.dp).fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+            Column(Modifier.widthIn(max = AudilegeLayout.contentWidth).fillMaxWidth().padding(horizontal = AudilegeLayout.pageInset, vertical = 6.dp)) {
                 if (mode == Mode.Listen) {
                     var drag by remember(chapter) { mutableStateOf<Float?>(null) }
                     val duration = progress?.durationMs ?: previewDurationMs
@@ -174,7 +175,8 @@ internal fun ReaderDock(
 private fun PlaybackSetting(title: String, value: String, modifier: Modifier, click: () -> Unit) {
     Surface(onClick = click, modifier = modifier, shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainer) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(value, style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center)
         }
@@ -216,7 +218,8 @@ private fun SleepTimer(modifier: Modifier) {
 internal fun MiniPlayer(covers: CoverStore, onOpen: (OpenBook) -> Unit) {
     val player = AudilegePlayback
     val book = player.activeBook ?: return
-    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
+    Surface(modifier = Modifier.padding(horizontal = AudilegeLayout.pageInset, vertical = 4.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer, shape = AudilegeLayout.cardShape) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically) {
             val openLabel = stringResource(R.string.audio_open)
@@ -236,7 +239,7 @@ internal fun MiniPlayer(covers: CoverStore, onOpen: (OpenBook) -> Unit) {
                 }
             }
             PlayControl(player.playing,player.loading,true,false,player::toggle)
-            TextButton(onClick = player::stop) { Text(stringResource(R.string.close)) }
+            IconButton(onClick = player::stop) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
         }
     }
 }

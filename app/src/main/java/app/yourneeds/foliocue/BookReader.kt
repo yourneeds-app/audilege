@@ -60,7 +60,8 @@ private sealed interface SectionAudio {
 internal fun BookReader(
     activity: MainActivity, file: File, book: Publication, initialMode: Mode?,
     accent: Accent, online: OnlineBook?, serverProgress: JSONObject?,
-    covers: CoverStore, ownerScope: kotlinx.coroutines.CoroutineScope, resumeSession: Boolean = false, close: () -> Unit,
+    covers: CoverStore, ownerScope: kotlinx.coroutines.CoroutineScope, resumeSession: Boolean = false,
+    backLabel: Int = R.string.back, close: () -> Unit,
 ) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("reader", Context.MODE_PRIVATE) }
@@ -468,7 +469,8 @@ internal fun BookReader(
     Surface(color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground, modifier = Modifier.fillMaxSize()) {
         Column(Modifier.then(if (controls || mode == Mode.Listen) Modifier.safeDrawingPadding() else Modifier)) {
             if (controls || mode == Mode.Listen) {
-                FolioBar(stringResource(if (mode == Mode.Listen) R.string.player_title else mode.label), back = ::leaveReader, overflow = readerMenu) {
+                FolioBar(stringResource(if (mode == Mode.Listen) R.string.player_title else mode.label),
+                    back = ::leaveReader, backLabel = backLabel, overflow = readerMenu) {
                     if (mode == Mode.Listen) ListenOutputButton()
                     if (mode == Mode.Listen) IconButton(onClick = { dialog = R.string.contents }) {
                         Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.List, stringResource(R.string.contents))

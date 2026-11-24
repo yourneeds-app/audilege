@@ -58,7 +58,7 @@ internal fun ShelfRail(tab: ShelfTab, enabled: Boolean, onSelect: (ShelfTab) -> 
 @Composable
 private fun ResumeCard(hero: RecentBook, covers: CoverStore, enabled: Boolean) {
     val item = hero.item
-    Surface(onClick = item.open, enabled = enabled, shape = MaterialTheme.shapes.large,
+    Surface(onClick = item.open, enabled = enabled, shape = AudilegeLayout.cardShape,
         color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             BookCover(item.title, covers, item.key, item.cover, Modifier.width(62.dp).aspectRatio(.71f))
@@ -71,7 +71,11 @@ private fun ResumeCard(hero: RecentBook, covers: CoverStore, enabled: Boolean) {
                 hero.fraction?.let { LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth().padding(top = 5.dp)) }
             }
             Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primary) {
-                Icon(Icons.Default.PlayArrow, null, Modifier.padding(8.dp).size(22.dp))
+                if (hero.modeLabel == R.string.shelf_continue_read) {
+                    Icon(painterResource(R.drawable.shelf_book), null, Modifier.padding(8.dp).size(22.dp))
+                } else {
+                    Icon(Icons.Default.PlayArrow, null, Modifier.padding(8.dp).size(22.dp))
+                }
             }
         }
     }
@@ -99,10 +103,15 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: RecentB
             }
         }
         if (search || query.isNotEmpty()) OutlinedTextField(query, setQuery, singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), label = { Text(stringResource(R.string.shelf_filter)) })
+            modifier = Modifier.fillMaxWidth().padding(horizontal = AudilegeLayout.pageInset), label = { Text(stringResource(R.string.shelf_filter)) })
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val columns = if (list) GridCells.Fixed(1) else if (maxWidth < 520.dp) GridCells.Fixed(if (maxWidth >= 315.dp) 3 else 2) else GridCells.Adaptive(136.dp)
-            LazyVerticalGrid(columns, state = grid, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            val columns = when {
+                list -> GridCells.Fixed(1)
+                maxWidth < 360.dp -> GridCells.Fixed(2)
+                maxWidth < 520.dp -> GridCells.Fixed(3)
+                else -> GridCells.Adaptive(136.dp)
+            }
+            LazyVerticalGrid(columns, state = grid, contentPadding = PaddingValues(start = AudilegeLayout.pageInset, end = AudilegeLayout.pageInset, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 item(span = { GridItemSpan(maxLineSpan) }) { header() }
                 if (tab == ShelfTab.Library && recent != null && query.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {

@@ -12,7 +12,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -250,11 +252,12 @@ private tailrec fun Context.activity(): Activity? = when (this) {
 @Composable
 private fun SettingsGroup(title: Int, selected: Boolean, choose: () -> Unit, content: @Composable () -> Unit) {
     val state = stringResource(if (selected) R.string.design_expanded else R.string.design_collapsed)
-    OutlinedCard(Modifier.fillMaxWidth()) {
+    OutlinedCard(Modifier.fillMaxWidth(), shape = AudilegeLayout.cardShape) {
         Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = choose).semantics { stateDescription = state }.heightIn(min = 56.dp)
             .padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(title), Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.titleMedium)
-            Text(if (selected) "−" else "+", style = MaterialTheme.typography.titleLarge)
+            Icon(if (selected) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (selected) Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)) { content() }
@@ -354,16 +357,21 @@ internal fun SettingsScreen(
         browserFailed = runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isFailure
     }
     fun expand(id: Int) { expanded = if (expanded == id) 0 else id }
-    Scaffold(topBar = {
-        TopAppBar(title = { Text(stringResource(R.string.app_settings)) }, navigationIcon = {
-            IconButton(onClick = close) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
-        })
-    }) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.widthIn(max = 600.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (onProfiles != null) OutlinedCard(onClick = onProfiles, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.profiles), Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium)
+    Surface(Modifier.fillMaxSize()) {
+        Column(Modifier.safeDrawingPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
+            FolioBar(stringResource(R.string.app_settings), back = close)
+            Column(Modifier.weight(1f).widthIn(max = AudilegeLayout.contentWidth).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(horizontal = AudilegeLayout.pageInset, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (onProfiles != null) OutlinedCard(onClick = onProfiles, modifier = Modifier.fillMaxWidth(),
+                    shape = AudilegeLayout.cardShape) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.profile_and_server), Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleMedium)
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
                 SettingsGroup(R.string.material_display, expanded == R.string.material_display, { expand(R.string.material_display) }) {
                     Choice(stringResource(R.string.design_app_theme), listOf(R.string.system, R.string.day, R.string.night), mode) {

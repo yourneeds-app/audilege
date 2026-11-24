@@ -252,7 +252,8 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                 edit.apply()
             }
             key(book.file) { BookReader(activity,book.file,book.publication,book.mode,accent,book.online,book.serverProgress,covers,scope,
-                resumeSession = book.resumeSession) {
+                resumeSession = book.resumeSession, backLabel = if (details != null && !settings && !statistics && !form)
+                    R.string.reader_back else R.string.back) {
                 val bookKey = keyOf(book.file.absolutePath)
                 val index = readerPrefs.getInt("$bookKey.chapter",0)
                 val chapterPath = book.publication.spine.getOrNull(index)?.path

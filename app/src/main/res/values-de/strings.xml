@@ -1,7 +1,6 @@
 <resources>
     <string name="app">Audilege</string>
     <string name="shelf">Bibliothek</string>
-    <string name="profiles">Server &amp; Profile</string>
     <string name="add">Profil hinzufügen</string>
     <string name="edit">Profil bearbeiten</string>
     <string name="local">Auf diesem Gerät</string>
@@ -156,10 +155,10 @@
     <string name="license_other">Weitere Komponenten · Hinweise</string>
     <string name="license_ed25519">Ed25519 · Lizenz</string>
     <string name="statistics_syncing">Abgleich mit BookOrbit…</string>
-    <string name="statistics_sync_sign_in">Melde dich zum Abgleichen erneut an. Deine Hörzeit bleibt auf diesem Gerät gespeichert.</string>
-    <string name="statistics_sync_unsupported">Dieser Server erlaubt derzeit keinen kompatiblen Statistikabgleich. Deine Hörzeit bleibt auf diesem Gerät gespeichert.</string>
-    <string name="statistics_sync_offline">Noch nicht abgeglichen. Deine Hörzeit bleibt auf diesem Gerät gespeichert und wird erneut versucht.</string>
-    <string name="statistics_sync_done">Mit BookOrbit abgeglichen. Andere Geräte erscheinen nach dem Aktualisieren.</string>
+    <string name="statistics_sync_sign_in">Melde dich erneut an, um deine Aktivität mit BookOrbit abzugleichen.</string>
+    <string name="statistics_sync_unsupported">Dieser BookOrbit-Server unterstützt den Statistikabgleich nicht.</string>
+    <string name="statistics_sync_offline">Abgleich ausstehend. Audilege versucht es automatisch erneut.</string>
+    <string name="statistics_sync_done">Mit BookOrbit abgeglichen.</string>
     <string name="statistics_sync_pending">Wartet auf den ersten Abgleich mit BookOrbit.</string>
     <string name="statistics_sync_collected">Neue Aktivität wird gesammelt oder wartet auf die Übertragung. BookOrbit speichert Sitzungen ab zehn Sekunden.</string>
     <string name="statistics_sync_now">Jetzt abgleichen</string>

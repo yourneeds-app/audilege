@@ -3,7 +3,6 @@
     <string name="activity_read">Lesen</string>
     <string name="activity_listen">Hörbücher</string>
     <string name="activity_tts">Vorlesen</string>
-    <string name="activity_server_hint">Auf BookOrbit gespeicherte Aktivität von allen Geräten. Frühere reine App-Statistiken werden nicht verwendet. Neue Aktivität erscheint nach Bestätigung durch den Server.</string>
     <string name="activity_account_required">Wähle ein BookOrbit-Kontoprofil, um Statistiken für Lesen, Hörbücher und Vorlesen abzugleichen.</string>
     <string name="activity_timezone">BookOrbit-Zeitzone: %1$s</string>
     <string name="activity_completed_total">Abgeschlossene Bücher auf BookOrbit, insgesamt: %1$d</string>

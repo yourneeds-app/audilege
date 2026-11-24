@@ -11,8 +11,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -20,16 +18,10 @@ import androidx.compose.ui.unit.dp
 internal fun ProfilesScreen(profiles: List<Profile>, selected: Profile?, busy: Boolean,
                             openMenu: () -> Unit, select: (Profile?) -> Unit, edit: (Profile?) -> Unit) {
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        FolioBar(stringResource(R.string.shelf_profile), openMenu)
-        LazyColumn(Modifier.weight(1f).widthIn(max = 640.dp).fillMaxWidth().align(Alignment.CenterHorizontally),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+        FolioBar(stringResource(R.string.profile_and_server), openMenu)
+        LazyColumn(Modifier.weight(1f).widthIn(max = AudilegeLayout.contentWidth).fillMaxWidth().align(Alignment.CenterHorizontally),
+            contentPadding = PaddingValues(horizontal = AudilegeLayout.pageInset, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            item {
-                Text(stringResource(R.string.profile_and_server), style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.semantics { heading() })
-                Text(stringResource(R.string.profile_overview_hint), Modifier.padding(top = 8.dp),
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
             items(profiles.sortedByDescending { it.id == selected?.id }, key = { it.id }) { profile ->
                 ProfileCard(profile, profile.id == selected?.id, busy,
                     select = { select(profile) }, edit = { edit(profile) })
@@ -43,7 +35,7 @@ internal fun ProfilesScreen(profiles: List<Profile>, selected: Profile?, busy: B
                 }
             }
             item {
-                OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+                OutlinedCard(Modifier.fillMaxWidth(), shape = AudilegeLayout.cardShape,
                     border = BorderStroke(1.dp, if (selected == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -67,7 +59,7 @@ internal fun ProfilesScreen(profiles: List<Profile>, selected: Profile?, busy: B
 
 @Composable
 private fun ProfileCard(profile: Profile, active: Boolean, busy: Boolean, select: () -> Unit, edit: () -> Unit) {
-    OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+    OutlinedCard(Modifier.fillMaxWidth(), shape = AudilegeLayout.cardShape,
         colors = CardDefaults.outlinedCardColors(containerColor = if (active) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .35f)
             else MaterialTheme.colorScheme.surfaceContainerLow),
         border = BorderStroke(if (active) 1.5.dp else 1.dp,

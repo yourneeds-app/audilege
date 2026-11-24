@@ -7,6 +7,7 @@ import android.text.Html
 import android.text.format.Formatter
 import android.util.LruCache
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,8 +15,6 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -186,13 +185,12 @@ internal fun DetailScreen(
             ?: publication?.cover?.let(publication::open)
     }
     CoverTheme(covers, coverKey, loadCover) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-            Row(Modifier.padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = close, enabled = !busy) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
-                Text(stringResource(R.string.book_info), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            }
-            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeDrawingPadding()) {
+            FolioBar(stringResource(R.string.book_info), back = close, backEnabled = !busy)
+            Column(Modifier.weight(1f).align(Alignment.CenterHorizontally)
+                .widthIn(max = AudilegeLayout.contentWidth).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(AudilegeLayout.pageInset),
+                verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 problem?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
                 BoxWithConstraints {
