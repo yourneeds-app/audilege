@@ -19,7 +19,11 @@ Unterstützt sind DRM-freie EPUBs mit XHTML-Text und optionalen EPUB-3-Media-Ove
 
 ## AirPlay 2
 
-Die AirPlay-2-Integration ist vertagt. Sonora dokumentiert einen nativen Senderweg mit `airplay2-sender-cpp`. Für FolioCue sind insbesondere die Lizenzhinweise der Abhängigkeiten und die Synchronisierung der Wortmarkierung mit der hörbaren Position am Lautsprecher zu prüfen. Der aktuelle Build spielt lokal ab.
+Im Modus **Hören** öffnet das Lautsprechersymbol die Audioausgabe. Einen kompatiblen AirPlay-2-Empfänger im selben WLAN auswählen. Das Handy streamt den Ton vom Server oder spielt eine gespeicherte Ausgabe ab. Die Verbindung zu BookOrbit verwaltet das Handy. Der Lautsprecher erhält den Ton.
+
+Ab Android 11 bietet Audilege die gefundenen Lautsprecher auch in der Ausgabeauswahl seiner Android-Medienkachel an. Gerät und Lautstärke lassen sich dort während einer Hörsitzung wechseln. Die Darstellung der Kachel in den Schnelleinstellungen und auf dem Sperrbildschirm richtet sich nach der Android-Oberfläche und den Geräteeinstellungen.
+
+Audilege schätzt die hörbare Stelle anhand der übertragenen Audiodaten und der Pufferzeit. Beim Wechsel von AirPlay zu **Lesen** oder **Mitlesen** pausiert die Wiedergabe an dieser Stelle. Eine Verbindungsunterbrechung pausiert ebenfalls. Audilege ordnet die Hörposition über die Zeitmarken des EPUB der passenden Textstelle zu. Der Abgleich mit anderen Geräten erfordert ein BookOrbit-Kontoprofil. Die Lizenztexte des Senders stehen in der Audioauswahl.
 
 ## Bauen und prüfen
 

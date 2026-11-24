@@ -1,0 +1,25 @@
+<resources>
+    <string name="route_title">Audioausgabe</string>
+    <string name="route_current">Audioausgabe, %1$s</string>
+    <string name="route_this_device">Dieses Gerät</string>
+    <string name="route_system">Android-Audioausgabe</string>
+    <string name="route_airplay">AirPlay-Lautsprecher</string>
+    <string name="route_airplay_device">%1$s · AirPlay</string>
+    <string name="route_searching">Suche nach Lautsprechern im lokalen Netzwerk…</string>
+    <string name="route_empty">Kein AirPlay-Lautsprecher gefunden. Verbinde Lautsprecher und Android-Gerät mit demselben WLAN.</string>
+    <string name="route_search_failed">Die Lautsprechersuche im lokalen Netzwerk konnte nicht gestartet werden.</string>
+    <string name="route_unavailable">AirPlay ist auf diesem Gerät nicht verfügbar.</string>
+    <string name="route_connecting">Verbindung mit %1$s wird hergestellt…</string>
+    <string name="route_connection_failed">Verbindung fehlgeschlagen. Prüfe, ob der Lautsprecher AirPlay 2 für Audio unterstützt und Verbindungen ohne PIN oder Passwort erlaubt.</string>
+    <string name="route_lost">Verbindung zum Lautsprecher verloren. Die Wiedergabe pausiert.</string>
+    <string name="route_audio_failed">Diese Tonspur konnte nicht an den Lautsprecher übertragen werden. Die Wiedergabe pausiert.</string>
+    <string name="route_rescan">Erneut suchen</string>
+    <string name="route_system_picker">Android-Ausgabegerät wählen</string>
+    <string name="route_switcher_unavailable">Android konnte die Geräteauswahl nicht öffnen.</string>
+    <string name="route_bluetooth_settings">Bluetooth-Einstellungen</string>
+    <string name="route_system_unavailable">Android konnte die Geräteeinstellungen nicht öffnen.</string>
+    <string name="route_volume">Lautstärke auf %1$s</string>
+    <string name="route_volume_value">Lautsprecherlautstärke · %1$d %%</string>
+    <string name="route_licenses">Softwarelizenzen für AirPlay</string>
+    <string name="route_licenses_unavailable">Die Lizenztexte konnten nicht geöffnet werden.</string>
+</resources>

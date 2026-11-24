@@ -62,6 +62,7 @@ internal fun ListeningArtwork(
             val label = book.contents.firstOrNull { it.path == book.spine[chapter].path }?.label.orEmpty()
             Text(label.ifBlank { book.title }, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
                 maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+            ListenOutputStatus()
         }
     }
 }

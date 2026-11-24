@@ -116,9 +116,13 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: RecentB
                         IconButton(onClick = { setList(!list) }) { Icon(painterResource(if (list) R.drawable.shelf_grid else R.drawable.shelf_list),
                             stringResource(if (list) R.string.shelf_grid else R.string.shelf_list)) }
                     }
-                    if (tab == ShelfTab.Discover) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(!byAuthor, { byAuthor = false }, { Text(stringResource(R.string.shelf_by_title)) })
-                        FilterChip(byAuthor, { byAuthor = true }, { Text(stringResource(R.string.shelf_by_author)) })
+                }
+                if (tab == ShelfTab.Discover) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(!byAuthor, { byAuthor = false }, { Text(stringResource(R.string.shelf_by_title)) })
+                            FilterChip(byAuthor, { byAuthor = true }, { Text(stringResource(R.string.shelf_by_author)) })
+                        }
                     }
                 }
                 items(visible, key = { it.key }) { book -> LibraryTile(book, covers, list, !busy, book.open) }

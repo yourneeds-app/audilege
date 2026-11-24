@@ -116,6 +116,9 @@ internal class Publication(
     private val recentCues = object : LinkedHashMap<Item, List<Cue>>(3, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Item, List<Cue>>?) = size > 2
     }
+    private val narratedChapters = object : LinkedHashMap<Int, Map<String, String>>(3, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, Map<String, String>>?) = size > 2
+    }
     private val sectionStarts = object : LinkedHashMap<String, Map<String, Long>>(4, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Map<String, Long>>?) = size > 3
     }
@@ -168,6 +171,17 @@ internal class Publication(
     }
 
     fun open(path: String): InputStream? = if (path in mime) resourceStream(path) else null
+
+    fun prepareNarrationLocations(chapter: Int, cues: List<Cue>) {
+        if (cues.isEmpty() || synchronized(narratedChapters) { narratedChapters.containsKey(chapter) }) return
+        val ids = cues.mapNotNullTo(mutableSetOf()) { it.fragment }
+        val root = open(spine[chapter].path)?.let(::xml) ?: return
+        val locations = narrationLocations(root, ids)
+        synchronized(narratedChapters) { narratedChapters[chapter] = locations }
+    }
+
+    fun narratedCfi(chapter: Int, anchor: String?): String? =
+        synchronized(narratedChapters) { narratedChapters[chapter]?.get(anchor) }
 
     fun cues(chapter: Item): List<Cue> {
         val request = synchronized(recentCues) {

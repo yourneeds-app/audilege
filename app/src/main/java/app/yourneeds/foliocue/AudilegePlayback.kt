@@ -19,6 +19,25 @@ internal object AudilegePlayback {
     private var job: Job? = null
     private var load: Job? = null
     private var narration: Narration? = null
+    private var routeJob: Job? = null
+    private var routeRevision = 0L
+    private var switchingToPhone = false
+    private var heldAnchor: String? = null
+    private var heldFraction = 0.0
+    private data class ChapterRequest(val index: Int, val anchor: String?, val resumeSaved: Boolean, val cfi: String?, val elapsed: Int?)
+    private var requestedChapter: ChapterRequest? = null
+    private var listenMode by mutableStateOf(false)
+    val listenEligible get() = listenMode
+    var outputName by mutableStateOf<String?>(null)
+        private set
+    var outputId by mutableStateOf<String?>(null)
+        private set
+    var connectingOutput by mutableStateOf<String?>(null)
+        private set
+    var outputError by mutableStateOf<Int?>(null)
+        private set
+    var outputVolume by mutableIntStateOf(25)
+        private set
     private var sync: ReadingSync? = null
     private val flushing = mutableSetOf<ReadingSync>()
     private var readerVisible = false
@@ -34,8 +53,8 @@ internal object AudilegePlayback {
         private set
     var marker by mutableStateOf<String?>(null)
         private set
-    val anchor get() = narration?.anchor
-    val fraction get() = narration?.fraction ?: 0.0
+    val anchor get() = narration?.anchor ?: heldAnchor
+    val fraction get() = narration?.fraction ?: heldFraction
     var progress by mutableStateOf<TrackProgress?>(null)
         private set
     var speed by mutableFloatStateOf(1f)
@@ -48,6 +67,7 @@ internal object AudilegePlayback {
     val skipSeconds: Int get() = prefs?.getInt("skipSeconds", 15)?.coerceIn(5,120) ?: 15
     private val prefs get() = context?.getSharedPreferences("reader", Context.MODE_PRIVATE)
     private var lastPersist = 0L
+    private var lastCheckpointMs = -1
     var service: PlaybackService? = null
     var startPending = false
 
@@ -60,6 +80,110 @@ internal object AudilegePlayback {
 
     fun readerVisible(visible: Boolean) { readerVisible = visible }
 
+    fun setListenEligible(eligible: Boolean) {
+        listenMode = eligible
+        if (!eligible) localMode()
+    }
+
+    fun localMode() {
+        if (outputId != null || connectingOutput != null || switchingToPhone) leaveRoute(null, resumeOnPhone = false)
+    }
+
+    fun changeOutputVolume(value: Int) {
+        if (outputId == null) return
+        AirPlaySender.setVolume(value)
+        outputVolume = AirPlaySender.volume
+        service?.refresh(force = true)
+    }
+
+    fun selectOutput(speaker: AirPlaySpeaker?) {
+        if (speaker == null) {
+            outputError = null
+            if (outputId != null || connectingOutput != null) leaveRoute(null, resumeOnPhone = playing)
+            return
+        }
+        val ctx = context ?: return
+        if (!listenEligible || outputId == speaker.id) return
+        val revision = ++routeRevision
+        routeJob?.cancel()
+        freezeChapter()
+        switchingToPhone = false
+        outputError = null
+        outputId = null
+        outputName = null
+        connectingOutput = speaker.name
+        loading = activeBook != null
+        service?.refresh(force = true)
+        routeJob = scope.launch {
+            val connected = try { AirPlaySender.connect(ctx, speaker) }
+                catch (cancel: CancellationException) { throw cancel }
+                catch (_: Exception) { false }
+            if (revision != routeRevision) return@launch
+            if (!connected) {
+                leaveRoute(R.string.route_connection_failed, resumeOnPhone = false)
+                return@launch
+            }
+            outputId = speaker.id
+            outputName = speaker.name
+            outputVolume = AirPlaySender.volume
+            connectingOutput = null
+            reopenRequested()
+            service?.refresh(force = true)
+            while (isActive && revision == routeRevision) {
+                delay(200)
+                if (!AirPlaySender.connected) {
+                    leaveRoute(R.string.route_lost, resumeOnPhone = false)
+                    return@launch
+                }
+            }
+        }
+    }
+
+    private fun freezeChapter() {
+        val current = narration
+        if (current != null) {
+            heldAnchor = current.anchor
+            heldFraction = current.fraction
+            progress = current.progress()
+            checkpoint()
+            requestedChapter = ChapterRequest(chapter, heldAnchor, false, null, progress?.elapsedMs)
+        }
+        job?.cancel()
+        load?.cancel()
+        current?.close()
+        narration = null
+    }
+
+    private fun reopenRequested() {
+        requestedChapter?.let { openChapter(it.index, it.anchor, it.resumeSaved, it.cfi, it.elapsed) }
+    }
+
+    private fun leaveRoute(reason: Int?, resumeOnPhone: Boolean) {
+        val revision = ++routeRevision
+        routeJob?.cancel()
+        freezeChapter()
+        if (!resumeOnPhone) {
+            playing = false
+            abandonFocus()
+        }
+        switchingToPhone = true
+        connectingOutput = null
+        outputName = null
+        outputId = null
+        outputError = reason
+        loading = activeBook != null
+        service?.refresh(force = true)
+        routeJob = scope.launch {
+            try { AirPlaySender.disconnect() } finally {
+                if (revision == routeRevision) {
+                    switchingToPhone = false
+                    reopenRequested()
+                    service?.refresh(force = true)
+                }
+            }
+        }
+    }
+
     fun start(context: Context, book: OpenBook, index: Int, anchor: String?, resumeSaved: Boolean, bridge: ReadingSync?, cfi: String? = null) {
         if (index !in book.publication.spine.indices) return
         this.context = context.applicationContext
@@ -69,6 +193,7 @@ internal object AudilegePlayback {
             readerVisible = visible
         }
         sync = bridge
+        setListenEligible(book.mode == Mode.Listen)
         activeBook = book.copy(mode = Mode.Listen, resumeSession = true)
         speed = prefs?.getFloat("speed", 1f)?.coerceIn(0.75f, 2f) ?: 1f
         highlightDelay = prefs?.getInt("${keyOf(book.file.absolutePath)}.highlightDelay",0) ?: 0
@@ -82,24 +207,36 @@ internal object AudilegePlayback {
         openChapter(index, anchor, resumeSaved, cfi)
     }
 
-    private fun openChapter(index: Int, anchor: String?, resumeSaved: Boolean, cfi: String? = null) {
+    private fun openChapter(index: Int, anchor: String?, resumeSaved: Boolean, cfi: String? = null, elapsedOverride: Int? = null) {
         val opened = activeBook ?: return
         val ctx = context ?: return
         job?.cancel()
         load?.cancel()
         narration?.close()
         narration = null
+        requestedChapter = ChapterRequest(index, anchor, resumeSaved, cfi, elapsedOverride)
+        heldAnchor = anchor
+        if (elapsedOverride == null) heldFraction = 0.0
         marker = null
-        progress = null
+        if (elapsedOverride == null) progress = null
         failed = false
         loading = true
         chapter = index
+        if (connectingOutput != null || switchingToPhone) return
+        val remoteGeneration = outputId?.let { AirPlaySender.generation }
+        if (remoteGeneration != null) AirPlaySender.metadata(opened.publication.title, opened.publication.author)
+        lastCheckpointMs = -1
         val key = keyOf(opened.file.absolutePath)
         prefs?.edit()?.putInt("$key.chapter", index)?.apply()
         val publication = opened.publication
         job = scope.launch {
             try {
-                val marks = withContext(Dispatchers.IO) { publication.cues(publication.spine[index]) }
+                val marks = withContext(Dispatchers.IO) {
+                    publication.cues(publication.spine[index]).also { cues ->
+                        // Narration still works if a damaged XHTML resource has no usable text locator.
+                        try { publication.prepareNarrationLocations(index, cues) } catch (_: Exception) { }
+                    }
+                }
                 if (marks.isEmpty()) {
                     loading = false
                     pause()
@@ -108,9 +245,9 @@ internal object AudilegePlayback {
                 val resolvedAnchor = anchor ?: cfi?.let { withContext(Dispatchers.IO) { publication.narrationAnchor(index,it,marks) } }
                 val marked = resolvedAnchor?.let { target -> marks.indexOfFirst { it.fragment == target }.takeIf { it >= 0 } }
                 val saved = if (resumeSaved) prefs?.getInt("$key.cue.$index",0) ?: 0 else 0
-                val engine = Narration(ctx, marks, marked ?: saved, { marker = it }, ::onFailure)
+                val engine = Narration(ctx, marks, marked ?: saved, { marker = it }, ::onFailure, remoteGeneration)
                 narration = engine
-                val elapsed = if (resumeSaved && marked == null) prefs?.getInt("$key.elapsed.$index",-1) ?: -1 else -1
+                val elapsed = elapsedOverride ?: if (resumeSaved && marked == null) prefs?.getInt("$key.elapsed.$index",-1) ?: -1 else -1
                 if (elapsed >= 0) engine.seek(elapsed)
                 progress = engine.progress()
                 attach(opened, engine)
@@ -143,7 +280,7 @@ internal object AudilegePlayback {
                     delay(if (playing && !loading) 24L else 200L)
                 }
             } catch (cancel: CancellationException) { throw cancel }
-              catch (_: Exception) { onFailure() }
+              catch (_: Exception) { if (isActive) onFailure() }
         }
     }
 
@@ -158,26 +295,32 @@ internal object AudilegePlayback {
                 val path = engine.audio
                 if (source != null) {
                     val stream = withContext(Dispatchers.IO) { source(path) }
-                    engine.attach(stream)
+                    engine.attach(stream) { source(path) }
                 } else {
                     val part = File.createTempFile("audilege-audio-", ".part", ctx.cacheDir)
+                    var retained = false
                     try {
                         withContext(Dispatchers.IO) {
                             val input = opened.publication.open(path) ?: error("Missing audio file")
                             input.use { from -> part.outputStream().use { to -> from.copyTo(to) } }
                         }
                         engine.attach(part)
-                    } finally { part.delete() }
+                        retained = engine.retainsAudioFile
+                    } finally { if (!retained) part.delete() }
                 }
                 engine.setPlaying(playing, speed)
                 loading = false
                 service?.refresh(force = true)
             } catch (cancel: CancellationException) { throw cancel }
-              catch (_: Exception) { onFailure() }
+              catch (_: Exception) { if (isActive && narration === engine) onFailure() }
         }
     }
 
     private fun onFailure() {
+        if (outputId != null) {
+            leaveRoute(if (AirPlaySender.connected) R.string.route_audio_failed else R.string.route_lost, resumeOnPhone = false)
+            return
+        }
         failed = true
         loading = false
         pause()
@@ -190,7 +333,11 @@ internal object AudilegePlayback {
         if (!requestFocus()) { failed = true; return }
         playing = true
         if (!requestService()) return
-        if (failed || narration == null || narration?.finished == true) {
+        if (connectingOutput != null || switchingToPhone) {
+            service?.refresh(force = true)
+            return
+        }
+        if (failed || (narration == null && !loading) || narration?.finished == true) {
             val completed = narration?.finished == true
             openChapter(chapter, null, !completed)
         } else narration?.setPlaying(true, speed)
@@ -252,14 +399,19 @@ internal object AudilegePlayback {
         val engine = narration ?: return
         val key = keyOf(book.file.absolutePath)
         val p = runCatching { engine.progress() }.getOrNull() ?: return
+        // Stopping an already paused session must preserve any reading done since the pause.
+        if (!playing && lastCheckpointMs == p.elapsedMs) return
+        lastCheckpointMs = p.elapsedMs
         lastPersist = SystemClock.elapsedRealtime()
-        prefs?.edit()?.putInt("$key.chapter",chapter)?.putInt("$key.cue.$chapter", engine.index)
+        val candidate = book.publication.progressPayload(chapter, null, engine.anchor, engine.fraction, true)
+        prefs?.edit()?.also { if (candidate != null) it.putString("$key.passage", candidate.toString()) }
+            ?.putInt("$key.chapter",chapter)?.putInt("$key.cue.$chapter", engine.index)
             ?.putInt("$key.elapsed.$chapter",p.elapsedMs)
             ?.putFloat("$key.shelfPercent", ((chapter + engine.fraction) * 100 / book.publication.spine.size).toFloat().coerceIn(0f,100f))
             ?.apply()
         if (!readerVisible) {
             val bridge = sync ?: return
-            book.publication.progressPayload(chapter, null, engine.anchor, engine.fraction, true)?.let {
+            candidate?.let {
                 bridge.remember(it)
                 if (flushing.add(bridge)) scope.launch {
                     try {
@@ -286,6 +438,20 @@ internal object AudilegePlayback {
         load = null
         narration?.close()
         narration = null
+        val wasRouted = outputId != null || connectingOutput != null || switchingToPhone
+        ++routeRevision
+        routeJob?.cancel()
+        routeJob = null
+        listenMode = false
+        switchingToPhone = false
+        outputId = null
+        outputName = null
+        connectingOutput = null
+        outputError = null
+        requestedChapter = null
+        heldAnchor = null
+        heldFraction = 0.0
+        if (wasRouted) scope.launch { AirPlaySender.disconnect() }
         sync = null
         readerVisible = false
         activeBook = null

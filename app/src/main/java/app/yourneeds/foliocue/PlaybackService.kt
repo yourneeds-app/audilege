@@ -3,8 +3,10 @@ package app.yourneeds.foliocue
 import android.app.*
 import android.content.*
 import android.graphics.Bitmap
+import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaMetadata
+import android.media.VolumeProvider
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
@@ -20,12 +22,14 @@ class PlaybackService : Service() {
     private var artJob: Job? = null
     private var lastUpdate = 0L
     private var currentChapter = -1
+    private var systemControlId: String? = null
+    private var routeVolume: SpeakerVolume? = null
     var foreground = false
         private set
     private val player get() = AudilegePlayback
     private val noisy = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) player.pause()
+            if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY && player.outputId == null) player.pause()
         }
     }
 
@@ -53,6 +57,12 @@ class PlaybackService : Service() {
                 override fun onSetPlaybackSpeed(speed: Float) = player.changeSpeed(speed)
             })
             isActive = true
+        }
+        if (Build.VERSION.SDK_INT >= 30) {
+            AudilegeSystemRoutes.attach(this) { id ->
+                systemControlId = id
+                updateAudioOutput()
+            }
         }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(noisy, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), RECEIVER_NOT_EXPORTED)
         else {
@@ -83,6 +93,7 @@ class PlaybackService : Service() {
     }
 
     fun refresh(force: Boolean = false) {
+        updateAudioOutput()
         val opened = player.activeBook ?: return
         val now = SystemClock.elapsedRealtime()
         val path = opened.file.absolutePath
@@ -132,6 +143,69 @@ class PlaybackService : Service() {
         if (foreground && !player.playing) {
             stopForeground(STOP_FOREGROUND_DETACH)
             foreground = false
+        }
+    }
+
+    private fun updateAudioOutput() {
+        val speaker = player.outputId
+        val current = routeVolume
+        if (speaker == null) {
+            if (current != null) {
+                routeVolume = null
+                session.setPlaybackToLocal(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            }
+            return
+        }
+        val level = player.outputVolume
+        if (current != null && current.speaker == speaker && current.controller == systemControlId) {
+            if (current.currentVolume != level) current.setCurrentVolume(level)
+            return
+        }
+        val provider = if (Build.VERSION.SDK_INT >= 30) SpeakerVolume(speaker, level, systemControlId)
+            else SpeakerVolume(speaker, level)
+        routeVolume = provider
+        session.setPlaybackToRemote(provider)
+    }
+
+    private inner class SpeakerVolume : VolumeProvider {
+        val speaker: String
+        val controller: String?
+        private var beforeMute = 25
+
+        constructor(speaker: String, level: Int) : super(VOLUME_CONTROL_ABSOLUTE, 100, level) {
+            this.speaker = speaker
+            controller = null
+        }
+
+        @androidx.annotation.RequiresApi(30)
+        constructor(speaker: String, level: Int, controller: String?) : super(VOLUME_CONTROL_ABSOLUTE, 100, level, controller) {
+            this.speaker = speaker
+            this.controller = controller
+        }
+
+        override fun onSetVolumeTo(volume: Int) = change { volume }
+        override fun onAdjustVolume(direction: Int) = change { level ->
+            when (direction) {
+                AudioManager.ADJUST_RAISE -> level + 5
+                AudioManager.ADJUST_LOWER -> level - 5
+                AudioManager.ADJUST_MUTE -> 0
+                AudioManager.ADJUST_UNMUTE -> if (level == 0) beforeMute else level
+                AudioManager.ADJUST_TOGGLE_MUTE -> if (level > 0) 0 else beforeMute
+                else -> level
+            }
+        }
+
+        private fun change(target: (Int) -> Int) {
+            scope.launch {
+                if (routeVolume !== this@SpeakerVolume || player.outputId != speaker) return@launch
+                val level = player.outputVolume
+                val next = target(level).coerceIn(0, 100)
+                if (next != level) {
+                    if (next == 0 && level > 0) beforeMute = level
+                    player.changeOutputVolume(next)
+                }
+            }
         }
     }
 
@@ -186,6 +260,7 @@ class PlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        if (Build.VERSION.SDK_INT >= 30) AudilegeSystemRoutes.detach()
         player.service = null
         scope.cancel()
         session.release()

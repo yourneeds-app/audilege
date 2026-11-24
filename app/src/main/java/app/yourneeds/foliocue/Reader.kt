@@ -350,6 +350,7 @@ internal class Narration(
     startIndex: Int,
     private val onMark: (String?) -> Unit,
     private val onFailure: () -> Unit,
+    private val senderGeneration: Long? = null,
 ) {
     private val timeline = CueTimeline(cues, startIndex)
     private val clock = ChapterClock(cues)
@@ -358,6 +359,8 @@ internal class Narration(
     val fraction get() = index.toDouble() / cues.size
     val anchor get() = timeline.cue.fragment
     private var player: MediaPlayer? = null
+    private var remote: AirPlayTrack? = null
+    val retainsAudioFile get() = senderGeneration != null
     private var prepared = false
     private var seeking = false
     private var ended = false
@@ -369,14 +372,27 @@ internal class Narration(
     private var highlighted: String? = null
 
     fun progress(): TrackProgress {
-        val ms = if (prepared && !seeking) player?.currentPosition ?: startMs else startMs
+        val ms = if (prepared && !seeking) remote?.currentPosition ?: player?.currentPosition ?: startMs else startMs
         return TrackProgress(clock.elapsed(index, ms), clock.duration)
     }
 
-    suspend fun attach(file: File) = attach { current -> file.inputStream().use { current.setDataSource(it.fd) } }
+    suspend fun attach(file: File) {
+        val generation = senderGeneration
+        if (generation != null) attachRemote { AirPlayTrack.local(context, generation, file, onFailure) }
+        else attach { current -> file.inputStream().use { current.setDataSource(it.fd) } }
+    }
 
-    suspend fun attach(stream: AudioStream) = attach { current ->
-        current.setDataSource(context, Uri.parse(stream.url.toString()), stream.headers)
+    suspend fun attach(stream: AudioStream, refresh: () -> AudioStream) {
+        val generation = senderGeneration
+        if (generation != null) attachRemote { AirPlayTrack.online(context, generation, stream, refresh, onFailure) }
+        else attach { current -> current.setDataSource(context, Uri.parse(stream.url.toString()), stream.headers) }
+    }
+
+    private fun attachRemote(create: () -> AirPlayTrack) {
+        closePlayer()
+        remote = create()
+        prepared = true
+        remote?.seek(startMs, clock.mediaEnd(index), wantsPlayback, tempo)
     }
 
     private suspend fun attach(source: (MediaPlayer) -> Unit) {
@@ -418,6 +434,7 @@ internal class Narration(
     fun setPlaying(playing: Boolean, speed: Float) {
         wantsPlayback = playing
         tempo = speed
+        remote?.let { it.setPlaying(playing, speed); return }
         val current = player ?: return
         if (!prepared) return
         if (playing && !seeking) resumePlayer()
@@ -437,6 +454,7 @@ internal class Narration(
     }
 
     private fun seekPlayer() {
+        remote?.let { it.seek(startMs, clock.mediaEnd(index), wantsPlayback, tempo); return }
         val current = player ?: return
         ended = false
         if (current.currentPosition == startMs && !seeking) {
@@ -470,11 +488,10 @@ internal class Narration(
     }
 
     fun tick(delayMs: Int): Boolean {
-        val current = player ?: return false
         if (!prepared || seeking) return false
         // MediaPlayer's timestamp is an anchor in the past, while currentPosition follows its media clock.
-        val position = current.currentPosition
-        val completed = ended
+        val position = remote?.currentPosition ?: player?.currentPosition ?: return false
+        val completed = remote?.ended ?: ended
         ended = false
         when (timeline.advance(position, completed)) {
             CueAdvance.FINISHED -> {
@@ -506,6 +523,8 @@ internal class Narration(
     }
 
     private fun closePlayer() {
+        remote?.close()
+        remote = null
         val current = player
         player = null
         current?.release()

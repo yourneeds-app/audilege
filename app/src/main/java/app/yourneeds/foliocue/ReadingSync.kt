@@ -37,8 +37,13 @@ internal fun JSONObject.place(book: Publication, mode: Mode?): ReadingPlace? {
     }
     val textStamp = stamp("textUpdatedAt")
     val narrationStamp = stamp("narrationUpdatedAt")
-    val textIsNewer = textStamp != null && (narrationStamp == null || textStamp > narrationStamp)
-    return if (mode == Mode.Read || textIsNewer) text ?: audio else audio ?: text
+    val preferText = when {
+        textStamp != narrationStamp -> (textStamp ?: Long.MIN_VALUE) > (narrationStamp ?: Long.MIN_VALUE)
+        optString("source") == "narration" -> false
+        optString("source") == "text" -> true
+        else -> mode == Mode.Read
+    }
+    return if (preferText) text ?: audio else audio ?: text
 }
 
 private val textFields = listOf("cfi", "pageNumber", "percentage", "koboLocationSource", "koboLocationType",
@@ -52,28 +57,58 @@ private fun comparable(value: JSONObject?, key: String): Any? = when (val raw = 
     else -> raw
 }
 
-/** Ignore server bookkeeping and numeric formatting when comparing two device positions. */
+private fun JSONObject.newestLocator(): Int? {
+    if (valueOf("cfi") == null || valueOf("mediaOverlayFragment") == null) return null
+    val text = stamp("textUpdatedAt")
+    val narration = stamp("narrationUpdatedAt")
+    if (text == null && narration == null) return null
+    return (text ?: Long.MIN_VALUE).compareTo(narration ?: Long.MIN_VALUE)
+}
+
+/** Reaffirming the same locator is harmless, switching the newest locator can move the reader. */
 internal fun samePosition(a: JSONObject?, b: JSONObject?): Boolean =
-    locatorFields.all { comparable(a, it) == comparable(b, it) }
+    locatorFields.all { comparable(a, it) == comparable(b, it) } && a?.newestLocator() == b?.newestLocator()
+
+private fun sameNarration(server: JSONObject, candidate: JSONObject): Boolean =
+    candidate.optString("source") == "narration" && candidate.valueOf("mediaOverlayFragment") != null &&
+        server.valueOf("mediaOverlayFragment") == candidate.valueOf("mediaOverlayFragment") &&
+        comparable(server, "mediaOverlaySectionIndex") == comparable(candidate, "mediaOverlaySectionIndex")
 
 internal fun serverHasCandidate(server: JSONObject, candidate: JSONObject): Boolean {
-    val marker = candidate.valueOf("mediaOverlayFragment")
-    return if (candidate.optString("source") == "narration" && marker != null) {
-        server.valueOf("mediaOverlayFragment") == marker &&
-            comparable(server, "mediaOverlaySectionIndex") == comparable(candidate, "mediaOverlaySectionIndex")
-    } else candidate.valueOf("cfi") != null && candidate.valueOf("cfi") == server.valueOf("cfi")
+    val cfi = candidate.valueOf("cfi")
+    if (candidate.optString("source") != "narration") {
+        if (cfi == null || cfi != server.valueOf("cfi")) return false
+        val narrationTime = server.stamp("narrationUpdatedAt") ?: return true
+        return server.valueOf("mediaOverlayFragment") == null ||
+            (server.stamp("textUpdatedAt") ?: Long.MIN_VALUE) >= narrationTime
+    }
+    if (!sameNarration(server, candidate)) return false
+    if (cfi == null || cfi == server.valueOf("cfi")) return true
+    // BookOrbit can convert the same fragment to its own CFI with ID assertions.
+    // It stamps both clocks together only when narration also moved the text.
+    val narrationStamp = server.stamp("narrationUpdatedAt") ?: return false
+    return server.valueOf("cfi") != null && narrationStamp == server.stamp("textUpdatedAt")
 }
+
+/** A narration POST can commit its marker while BookOrbit keeps a previous, later text position. */
+private fun retainedText(server: JSONObject, previous: JSONObject?, candidate: JSONObject): Boolean =
+    candidate.valueOf("cfi") != null && sameNarration(server, candidate) &&
+        textFields.all { comparable(server, it) == comparable(previous, it) } &&
+        server.valueOf("textUpdatedAt") == previous?.valueOf("textUpdatedAt")
 
 /** Text updates leave narration to the server. Resending an older marker would undo another device's listening. */
 internal fun writePayload(candidate: JSONObject, latest: JSONObject): JSONObject {
     val payload = JSONObject().put("source", candidate.optString("source", "text"))
-    val fields = if (payload.optString("source") == "narration") locatorFields else textFields
+    val narration = payload.optString("source") == "narration"
+    val legacy = !latest.has("textUpdatedAt") && !latest.has("narrationUpdatedAt")
+    val fields = if (narration) locatorFields else textFields
     fields.forEach { field ->
         if (candidate.has(field)) payload.put(field, candidate.get(field))
+        else if (field == "cfi" && narration && !legacy) return@forEach
         else if (field in textFields && latest.has(field)) payload.put(field, latest.get(field))
     }
     // Before BookOrbit separated update clocks, omitting a narration field could clear it.
-    if (!latest.has("textUpdatedAt") && !latest.has("narrationUpdatedAt")) {
+    if (legacy) {
         narrationFields.forEach { field ->
             if (!payload.has(field) && latest.has(field)) payload.put(field, latest.get(field))
         }
@@ -85,6 +120,7 @@ internal class ReadingSync private constructor(
     @Volatile private var online: ProgressEndpoint, initial: JSONObject?, private val preferences: SharedPreferences, key: String,
 ) {
     private val pendingKey = "$key.sync.pending"
+    private val submittedKey = "$key.sync.submitted"
     private val baseKey = "$key.sync.base"
     private val timeKey = "$key.sync.time"
     private val mutex = Mutex()
@@ -92,6 +128,7 @@ internal class ReadingSync private constructor(
 
     @Volatile var pending: JSONObject? = stored(pendingKey)
         private set
+    @Volatile private var submitted: JSONObject? = stored(submittedKey)
     @Volatile private var baseline: JSONObject? = stored(baseKey)
     @Volatile var remote: JSONObject? = initial ?: baseline
         private set
@@ -116,7 +153,8 @@ internal class ReadingSync private constructor(
             baseline = initial
             conflict = false
             preferences.edit().putString(baseKey, initial.toString()).apply()
-        } else conflict = !samePosition(baseline, initial) && !serverHasCandidate(initial, pending!!)
+        } else conflict = !samePosition(baseline, initial) && !serverHasCandidate(initial, pending!!) &&
+            !retainedText(initial, baseline, pending!!) && !priorWriteArrived(initial, pending!!)
     }
 
     @Synchronized fun remember(place: JSONObject) {
@@ -128,9 +166,10 @@ internal class ReadingSync private constructor(
 
     @Synchronized fun discardLocal() {
         pending = null
+        submitted = null
         baseline = remote
         conflict = false
-        preferences.edit().remove(pendingKey).remove(timeKey).putString(baseKey, remote?.toString()).apply()
+        preferences.edit().remove(pendingKey).remove(submittedKey).remove(timeKey).putString(baseKey, remote?.toString()).apply()
     }
 
     @Synchronized fun keepLocal() {
@@ -166,28 +205,64 @@ internal class ReadingSync private constructor(
     private fun exchange(force: Boolean): SyncState {
         val candidate = pending ?: return state
         if (conflict && !force) return SyncState.Conflict
-        val expected = if (force && conflict) remote else baseline
+        var expected = if (force && conflict) remote else baseline
         val latest = online.progress()
         if (serverHasCandidate(latest, candidate)) return acknowledge(latest, candidate)
-        if (!samePosition(expected, latest)) {
-            synchronized(this) { remote = latest; conflict = true }
-            return SyncState.Conflict
+        if (!samePosition(expected, latest) && priorWriteArrived(latest, candidate)) {
+            // Playback may have queued a new word while the server's last reply was lost.
+            expected = latest
+            synchronized(this) {
+                baseline = latest
+                remote = latest
+                preferences.edit().putString(baseKey, latest.toString()).apply()
+            }
         }
-        online.updateProgress(writePayload(candidate, latest))
-        val saved = online.progress()
-        if (!serverHasCandidate(saved, candidate)) {
-            synchronized(this) { remote = saved; conflict = true }
-            return SyncState.Conflict
+        var saved = latest
+        if (!retainedText(latest, expected, candidate)) {
+            if (!samePosition(expected, latest)) return markConflict(latest)
+            submit(candidate, writePayload(candidate, latest))
+            saved = online.progress()
+            if (serverHasCandidate(saved, candidate)) return acknowledge(saved, candidate)
+            if (!retainedText(saved, latest, candidate)) return markConflict(saved)
         }
+        // A deliberate rewind needs a text write on BookOrbit. Guard the second write and
+        // verify both locators so a concurrently changing device is never silently acknowledged.
+        val checked = online.progress()
+        if (serverHasCandidate(checked, candidate)) return acknowledge(checked, candidate)
+        if (!samePosition(saved, checked) || checked.valueOf("textUpdatedAt") != saved.valueOf("textUpdatedAt"))
+            return markConflict(checked)
+        val text = JSONObject(candidate.toString()).put("source", "text")
+        submit(candidate, writePayload(text, checked))
+        saved = online.progress()
+        if (!serverHasCandidate(saved, candidate)) return markConflict(saved)
         return acknowledge(saved, candidate)
+    }
+
+    private fun priorWriteArrived(server: JSONObject, candidate: JSONObject): Boolean {
+        val previous = submitted ?: return false
+        return previous.toString() != candidate.toString() &&
+            (serverHasCandidate(server, previous) || retainedText(server, baseline, previous))
+    }
+
+    private fun submit(candidate: JSONObject, body: JSONObject) {
+        submitted = candidate
+        preferences.edit().putString(submittedKey, candidate.toString()).apply()
+        online.updateProgress(body)
+    }
+
+    @Synchronized private fun markConflict(latest: JSONObject): SyncState {
+        remote = latest
+        conflict = true
+        return SyncState.Conflict
     }
 
     @Synchronized private fun acknowledge(latest: JSONObject, candidate: JSONObject): SyncState {
         remote = latest
         baseline = latest
         conflict = false
+        submitted = null
         if (pending === candidate) discardLocal()
-        else preferences.edit().putString(baseKey, latest.toString()).apply()
+        else preferences.edit().remove(submittedKey).putString(baseKey, latest.toString()).apply()
         return state
     }
 
@@ -218,7 +293,8 @@ internal fun Publication.progressPayload(chapter: Int, cfi: String?, anchor: Str
     if (chapter !in spine.indices || (cfi == null && (anchor == null || !narration)) || !fraction.isFinite()) return null
     val percentage = (100.0 * (chapter + fraction.coerceIn(0.0, 1.0)) / spine.size).coerceIn(0.0, 100.0)
     val payload = JSONObject().put("source", if (narration) "narration" else "text").put("percentage", percentage)
-    if (cfi != null) payload.put("cfi", "epubcfi(/$packageSpineStep/${(chapter + 1) * 2}!$cfi)")
+    val currentCfi = if (narration) narratedCfi(chapter, anchor) ?: cfi else cfi
+    if (currentCfi != null) payload.put("cfi", "epubcfi(/$packageSpineStep/${(chapter + 1) * 2}!$currentCfi)")
     if (narration && anchor != null) {
         payload.put("mediaOverlayFragment", "${spine[chapter].path}#$anchor")
         payload.put("mediaOverlaySectionIndex", chapter)

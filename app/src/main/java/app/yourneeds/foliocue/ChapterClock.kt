@@ -31,6 +31,8 @@ internal class ChapterClock(private val cues: List<Cue>) {
         return (span.offset + mediaMs.coerceIn(span.origin, span.end) - span.origin).coerceAtMost(duration.toLong()).toInt()
     }
 
+    fun mediaEnd(index: Int): Int = spans.lastMatching { it.first <= index }.end
+
     fun point(elapsedMs: Int): ChapterPoint {
         val elapsed = elapsedMs.coerceIn(0, duration - 1)
         val span = spans.lastMatching { it.offset <= elapsed }

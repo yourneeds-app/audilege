@@ -95,8 +95,26 @@ class PublicationsTest {
         assertEquals("epubcfi(/6/2!/4/2/2/1:2)", payload.getString("cfi"))
         assertEquals("OPS/text/one.xhtml#the", payload.getString("mediaOverlayFragment"))
         assertEquals(ReadingPlace(0, null, "the"), payload.place(online, Mode.Follow))
-        assertEquals(ReadingPlace(0, "/4/2/2/1:2", null), payload.place(online, Mode.Read))
+        assertEquals(ReadingPlace(0, null, "the"), payload.place(online, Mode.Read))
         payload.put("textUpdatedAt", "2026-11-24T09:05:00Z").put("narrationUpdatedAt", "2026-11-24T09:00:00Z")
         assertEquals(ReadingPlace(0, "/4/2/2/1:2", null), payload.place(online, Mode.Follow))
+        payload.put("narrationUpdatedAt", "2026-11-24T09:10:00Z")
+        for (mode in Mode.entries) assertEquals(ReadingPlace(0, null, "the"), payload.place(online, mode))
+
+        online.prepareNarrationLocations(0, cues)
+        val listening = online.progressPayload(0, null, "book", 0.75, true)!!
+        assertEquals("epubcfi(/6/2!/2/2/4/1:0)", listening.getString("cfi"))
+        online.prepareNarrationLocations(0, cues)
+        assertEquals(1, requested.count { it == "OPS/text/one.xhtml" })
+        assertNull(online.narratedCfi(0, "absent"))
+        assertEquals(null, requested.firstOrNull { it.endsWith(".mp3") || it.endsWith(".epub") })
+    }
+
+    @Test fun findsTextInNestedMarkupAcrossCommentsAndCdata() {
+        val root = xml("""<html><head/><body><p id="outer"><b id="word">  <!--split--><![CDATA[ Here]]></b></p><img id="image"/></body></html>""".byteInputStream())
+        val positions = narrationLocations(root, setOf("outer", "word", "image"))
+        assertEquals("/4/2/2/1:3", positions["word"])
+        assertEquals(positions["word"], positions["outer"])
+        assertEquals("/4/4", positions["image"])
     }
 }

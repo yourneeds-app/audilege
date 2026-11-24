@@ -1,0 +1,18 @@
+Audilege audio output
+
+Native sender adapted from Sonora 0.6.1 build 34, revision a537f1a9.
+The original component notices and license texts accompany this file.
+Audilege changes the sender identity, adds a session-scoped Android bridge,
+reports pending audio and the stream's timing offset, clears queued samples
+on a seek and sends the receiver a flush request at the new boundary.
+
+The released Audilege source archive includes app/src/main/cpp, its native
+build files and third-party/mbedtls. Mbed TLS is pinned to revision
+2ca6c285a0dd3f33982dd57299012dacab1ff206, with mbedtls-framework at
+750634d3a51eb9d61b59fd5d801546927c946588.
+
+To rebuild, install Android NDK 28.2.13676358 and SDK CMake 3.22.1. Run:
+
+python app/src/main/cpp/build_android.py --sdk <android-sdk> --build-dir <build-dir> --mbedtls third-party/mbedtls
+
+The generated libraries are written to app/src/main/jniLibs for Gradle.

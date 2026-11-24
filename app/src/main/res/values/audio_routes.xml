@@ -1,0 +1,25 @@
+<resources>
+    <string name="route_title">Audio output</string>
+    <string name="route_current">Audio output, %1$s</string>
+    <string name="route_this_device">This device</string>
+    <string name="route_system">Android audio output</string>
+    <string name="route_airplay">AirPlay speakers</string>
+    <string name="route_airplay_device">%1$s · AirPlay</string>
+    <string name="route_searching">Searching for speakers on the local network…</string>
+    <string name="route_empty">No AirPlay speaker found. Connect your speaker and Android device to the same Wi-Fi network.</string>
+    <string name="route_search_failed">Could not start speaker discovery on the local network.</string>
+    <string name="route_unavailable">AirPlay output is unavailable on this device.</string>
+    <string name="route_connecting">Connecting to %1$s…</string>
+    <string name="route_connection_failed">Could not connect. Check that the speaker supports AirPlay 2 audio and allows connections without a PIN or password.</string>
+    <string name="route_lost">The connection to the speaker was lost. Playback is paused.</string>
+    <string name="route_audio_failed">This audio track could not be sent to the speaker. Playback is paused.</string>
+    <string name="route_rescan">Search again</string>
+    <string name="route_system_picker">Choose an Android audio device</string>
+    <string name="route_switcher_unavailable">Android could not open its output switcher.</string>
+    <string name="route_bluetooth_settings">Bluetooth settings</string>
+    <string name="route_system_unavailable">Android could not open the device settings.</string>
+    <string name="route_volume">Volume on %1$s</string>
+    <string name="route_volume_value">Speaker volume · %1$d %%</string>
+    <string name="route_licenses">AirPlay software licenses</string>
+    <string name="route_licenses_unavailable">License texts could not be opened.</string>
+</resources>

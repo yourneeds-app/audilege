@@ -1,0 +1,3 @@
+<resources>
+    <bool name="system_audio_routes">false</bool>
+</resources>

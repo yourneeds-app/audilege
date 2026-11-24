@@ -108,4 +108,91 @@ class ReadingSyncTest {
         assertEquals("locator", body.getString("koreaderProgress"))
         assertTrue(samePosition(JSONObject(), JSONObject().put("percentage", 0).put("textUpdatedAt", JSONObject.NULL)))
     }
+
+    private fun narrated(n: Int) = place(n).put("source", "narration")
+        .put("mediaOverlayFragment", "chapter.xhtml#word$n").put("mediaOverlaySectionIndex", 0)
+
+    private class RewindServer : ProgressEndpoint {
+        var row = JSONObject().put("percentage", 8).put("cfi", "epubcfi(/6/2!/4/8)")
+            .put("textUpdatedAt", "2026-11-24T08:00:00Z")
+        val writes = mutableListOf<String>()
+        var afterNarration: (() -> Unit)? = null
+        override fun progress() = JSONObject(row.toString())
+        override fun updateProgress(body: JSONObject): JSONObject {
+            val source = body.getString("source")
+            writes.add(source)
+            if (source == "narration") {
+                row.put("mediaOverlayFragment", body.getString("mediaOverlayFragment"))
+                    .put("mediaOverlaySectionIndex", body.getInt("mediaOverlaySectionIndex"))
+                    .put("narrationUpdatedAt", "2026-11-24T09:00:00Z")
+                afterNarration?.invoke()
+            } else {
+                assertFalse(body.has("mediaOverlayFragment"))
+                row.put("cfi", body.getString("cfi")).put("percentage", body.getDouble("percentage"))
+                    .put("textUpdatedAt", "2026-11-24T09:00:01Z")
+            }
+            return JSONObject()
+        }
+    }
+
+    @Test fun listeningBackwardsAlsoRepositionsTheBrowserAndRetriesHalfFinishedWrites() = runBlocking {
+        val server = RewindServer()
+        val bridge = ReadingSync.open(server, server.progress(), preferences(), UUID.randomUUID().toString())
+        val candidate = narrated(2)
+        bridge.remember(candidate)
+        server.afterNarration = { throw java.io.IOException("Lost reply after saving the marker") }
+        try { bridge.flush(); fail("Expected offline retry") } catch (_: java.io.IOException) { }
+        server.afterNarration = null
+        assertEquals(SyncState.Synced, bridge.flush())
+        assertEquals(candidate.getString("cfi"), server.row.getString("cfi"))
+        assertEquals(candidate.getString("mediaOverlayFragment"), server.row.getString("mediaOverlayFragment"))
+        assertEquals(listOf("narration", "text"), server.writes)
+    }
+
+    @Test fun listeningDoesNotOverwriteAnotherDevicesNewerTextWhileRewinding() = runBlocking {
+        val server = RewindServer()
+        val bridge = ReadingSync.open(server, server.progress(), preferences(), UUID.randomUUID().toString())
+        bridge.remember(narrated(2))
+        server.afterNarration = {
+            server.row.put("cfi", place(6).getString("cfi")).put("textUpdatedAt", "2026-11-24T09:00:02Z")
+        }
+        assertEquals(SyncState.Conflict, bridge.flush())
+        assertEquals(listOf("narration"), server.writes)
+        assertEquals(place(6).getString("cfi"), server.row.getString("cfi"))
+    }
+
+    @Test fun listeningContinuesDuringALostReplyAndUploadsTheNewestWord() = runBlocking {
+        val server = RewindServer()
+        val bridge = ReadingSync.open(server, server.progress(), preferences(), UUID.randomUUID().toString())
+        bridge.remember(narrated(2))
+        server.afterNarration = {
+            bridge.remember(narrated(4))
+            throw java.io.IOException("Lost first reply while playback was running")
+        }
+        try { bridge.flush(); fail("Expected offline retry") } catch (_: java.io.IOException) { }
+        server.afterNarration = null
+        assertEquals(SyncState.Synced, bridge.flush())
+        assertEquals(narrated(4).getString("cfi"), server.row.getString("cfi"))
+        assertEquals(narrated(4).getString("mediaOverlayFragment"), server.row.getString("mediaOverlayFragment"))
+        assertEquals(listOf("narration", "narration", "text"), server.writes)
+    }
+
+    @Test fun acceptsTheServersOwnSentenceCfiWhenNarrationAlsoMovedText() {
+        val candidate = narrated(2)
+        val saved = JSONObject(candidate.toString()).put("cfi", "epubcfi(/6/2[item]!/4/2[word]/1:0)")
+            .put("narrationUpdatedAt", "2026-11-24T09:00:00Z").put("textUpdatedAt", "2026-11-24T09:00:00Z")
+        assertTrue(serverHasCandidate(saved, candidate))
+        saved.put("textUpdatedAt", "2026-11-24T08:00:00Z")
+        assertFalse(serverHasCandidate(saved, candidate))
+    }
+
+    @Test fun readingAtAnExistingTextCfiStillSupersedesMoreRecentListening() {
+        val earlier = narrated(8).put("cfi", place(2).getString("cfi"))
+            .put("narrationUpdatedAt", "2026-11-24T09:00:00Z").put("textUpdatedAt", "2026-11-24T08:00:00Z")
+        val selected = place(2)
+        assertFalse(serverHasCandidate(earlier, selected))
+        val newer = JSONObject(earlier.toString()).put("textUpdatedAt", "2026-11-24T10:00:00Z")
+        assertTrue(serverHasCandidate(newer, selected))
+        assertFalse(samePosition(earlier, newer))
+    }
 }

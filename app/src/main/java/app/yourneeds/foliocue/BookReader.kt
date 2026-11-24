@@ -45,7 +45,7 @@ internal enum class Typeface(val label: Int, val css: String) {
 }
 
 private data class Location(val index: Int, val anchor: String? = null, val revision: Int = 0,
-    val cfi: String? = null, val scroll: Int? = null)
+    val cfi: String? = null, val scroll: Int? = null, val textNavigation: Boolean = false)
 
 @Composable
 internal fun BookReader(
@@ -63,10 +63,12 @@ internal fun BookReader(
     }
     val sync = remember { online?.let { ReadingSync.open(it, serverProgress, prefs, bookKey) } }
     val initialPlace = remember {
-        if (resumeSession && AudilegePlayback.activeBook?.file == file) {
+        if (AudilegePlayback.activeBook?.file == file && (resumeSession ||
+                AudilegePlayback.outputId != null || AudilegePlayback.connectingOutput != null)) {
             return@remember ReadingPlace(AudilegePlayback.chapter, null, AudilegePlayback.anchor)
         }
-        val place = sync?.resume ?: serverProgress
+        val place = sync?.resume ?: serverProgress ?: prefs.getString("$bookKey.passage", null)
+            ?.let { runCatching { JSONObject(it) }.getOrNull() }
         place?.place(book, mode) ?: if (place != null) ReadingPlace(0, null, null) else null
     }
     var location by remember {
@@ -120,19 +122,26 @@ internal fun BookReader(
     fun stage(candidate: JSONObject?) {
         if (candidate == null) return
         val percent = candidate.optDouble("percentage", Double.NaN)
-        if (percent.isFinite()) prefs.edit().putFloat("$bookKey.shelfPercent", percent.toFloat()).apply()
+        val editor = prefs.edit().putString("$bookKey.passage", candidate.toString())
+        if (percent.isFinite()) editor.putFloat("$bookKey.shelfPercent", percent.toFloat())
         val place = candidate.place(book, Mode.Read)
         if (place?.cfi != null && candidate.optString("source") == "text") {
-            prefs.edit().putString("$bookKey.cfi.${place.chapter}", place.cfi).apply()
+            editor.putString("$bookKey.cfi.${place.chapter}", place.cfi)
         }
+        editor.apply()
         if (sync == null || sync.pending?.toString() == candidate.toString()) return
         sync.remember(candidate)
         if (syncState != SyncState.Conflict) syncState = SyncState.Pending
     }
 
+    fun stagePlayback() {
+        val active = playback.activeBook?.takeIf { it.file == file } ?: return
+        stage(active.publication.progressPayload(playback.chapter, null, playback.anchor, playback.fraction, true))
+    }
+
     fun go(index: Int, anchor: String? = null, continuePlaying: Boolean = false) {
         if (index !in book.spine.indices) return
-        if (!continuePlaying && index == location.index && anchor != null && mode != Mode.Listen) {
+        if (!continuePlaying && index == location.index && anchor != null && mode == Mode.Follow) {
             view?.jump(anchor)
             return
         }
@@ -145,9 +154,9 @@ internal fun BookReader(
                 }
                 return
             }
-            playback.start(context, openedAudio, index, anchor, false, sync)
+            playback.start(context, openedAudio.copy(mode = mode), index, anchor, false, sync)
         } else if (playback.activeBook?.file == file) playback.stop()
-        location = Location(index, anchor, location.revision + 1)
+        location = Location(index, anchor, location.revision + 1, textNavigation = mode == Mode.Read)
         prefs.edit().putInt("$bookKey.chapter", index).apply()
     }
 
@@ -155,22 +164,27 @@ internal fun BookReader(
         val current = displayed
         val page = view
         val fallback = ReaderTarget(current.index, current.cfi, current.anchor, offset = page?.scrollY ?: 0)
-        if (mode == Mode.Listen || page == null) {
+        if (mode == Mode.Listen) {
             val label = playback.progress?.elapsedMs?.let { ms ->
                 val s = ms / 1000
                 "%d:%02d".format(s / 60, s % 60)
             }.orEmpty()
             done(fallback.copy(anchor = playback.anchor.takeIf { attached } ?: lastAnchor ?: current.anchor, label = label))
-        } else {
+        } else if (page == null) done(fallback)
+        else {
+            val restored = mode == Mode.Read && movement == 0 && !current.textNavigation &&
+                (current.anchor != null || current.cfi != null)
             var text = ""
-            page.capturePosition(null, excerpt = { text = it }) { cfi, _ ->
-                done(fallback.copy(cfi = cfi ?: current.cfi, anchor = null, label = text))
+            page.capturePosition(current.anchor.takeIf { restored }, excerpt = { text = it }) { cfi, _ ->
+                done(if (restored) fallback.copy(label = text)
+                    else fallback.copy(cfi = cfi ?: current.cfi, anchor = null, label = text))
             }
         }
     }
     fun navigate(target: ReaderTarget) {
         if (target.chapter !in book.spine.indices) return
-        val next = Location(target.chapter, target.anchor, displayed.revision + 1, target.cfi, target.offset)
+        val next = Location(target.chapter, target.anchor, displayed.revision + 1, target.cfi, target.offset,
+            textNavigation = true)
         if (mode == Mode.Read) {
             location = next
             inspection = null
@@ -178,6 +192,8 @@ internal fun BookReader(
         } else {
             inspection = next
             if (mode == Mode.Listen) {
+                if (attached) stagePlayback()
+                playback.setListenEligible(false)
                 mode = Mode.Follow
                 prefs.edit().putInt("$bookKey.mode", mode.ordinal).apply()
             }
@@ -204,25 +220,14 @@ internal fun BookReader(
         if (syncState == SyncState.Conflict) { done(); return }
         val activeChapter = location.index
         val page = view
-        if (mode == Mode.Read && (movement > 0 || location.revision > 0) && page != null) {
+        if (mode == Mode.Read && (movement > 0 || location.textNavigation) && page != null) {
             page.capturePosition(null) { cfi, fraction ->
                 stage(book.progressPayload(activeChapter, cfi ?: location.cfi, null, fraction, false))
                 ownerScope.launch { syncPending() }
                 done()
             }
-        } else if (mode == Mode.Follow && attached && playback.anchor != null && page?.chapterPath == book.spine[activeChapter].path) {
-            val anchor = playback.anchor
-            val fraction = playback.fraction
-            stage(book.progressPayload(activeChapter, null, anchor, fraction, true))
-            page.capturePosition(anchor) { cfi, _ ->
-                if (cfi != null) stage(book.progressPayload(activeChapter, cfi, anchor, fraction, true))
-                ownerScope.launch { syncPending() }
-                done()
-            }
         } else {
-            if (mode != Mode.Read && attached && playback.anchor != null) {
-                stage(book.progressPayload(playback.chapter, null, playback.anchor, playback.fraction, true))
-            }
+            if (mode != Mode.Read) stagePlayback()
             ownerScope.launch { syncPending() }
             done()
         }
@@ -236,13 +241,16 @@ internal fun BookReader(
         if (mode == entry) return
         val previous = mode
         fun store() {
+            playback.setListenEligible(entry == Mode.Listen)
             mode = entry
             prefs.edit().putInt("$bookKey.mode", entry.ordinal).apply()
             if (entry != Mode.Listen) controls = false
         }
         if (entry == Mode.Read) {
-            val next = inspection ?: location.copy(anchor = playback.anchor.takeIf { attached } ?: location.anchor,
-                revision = location.revision + 1)
+            if (attached) stagePlayback()
+            val next = inspection ?: if (attached && playback.anchor != null) {
+                Location(playback.chapter, playback.anchor, location.revision + 1)
+            } else location.copy(revision = location.revision + 1)
             if (attached) playback.pause()
             inspection = null
             location = next
@@ -252,9 +260,15 @@ internal fun BookReader(
                 inspection = null
                 store()
                 location = Location(target.chapter, target.anchor, location.revision + 1, target.cfi, target.offset)
-                playback.start(context, openedAudio, target.chapter, target.anchor, false, sync, target.cfi)
+                playback.start(context, openedAudio.copy(mode = entry), target.chapter, target.anchor, false, sync, target.cfi)
             }
-        } else store()
+        } else {
+            if (previous == Mode.Listen && attached && playback.outputId != null) {
+                stagePlayback()
+                location = Location(playback.chapter, playback.anchor, location.revision + 1)
+            }
+            store()
+        }
     }
 
     BackHandler {
@@ -337,9 +351,11 @@ internal fun BookReader(
         onDispose { playback.readerVisible(false) }
     }
     LaunchedEffect(file) {
-        if (initialMode != null && initialMode != Mode.Read && (!resumeSession || playback.activeBook?.file != file))
-            playback.start(context, openedAudio, location.index, location.anchor, initialPlace == null, sync, location.cfi)
-        if (initialMode == Mode.Read && playback.activeBook?.file == file) playback.pause()
+        val leavingSpeaker = mode != Mode.Listen && (playback.outputId != null || playback.connectingOutput != null)
+        playback.setListenEligible(mode == Mode.Listen)
+        if (!leavingSpeaker && initialMode != null && mode != Mode.Read && (!resumeSession || playback.activeBook?.file != file))
+            playback.start(context, openedAudio.copy(mode = mode), location.index, location.anchor, initialPlace == null, sync, location.cfi)
+        if (mode == Mode.Read && playback.activeBook?.file == file) playback.pause()
     }
     LaunchedEffect(attached, playback.chapter) {
         if (attached && mode != Mode.Read && playback.chapter != location.index) {
@@ -361,7 +377,7 @@ internal fun BookReader(
     }
     LaunchedEffect(view, movement, location, mode) {
         if (mode != Mode.Read || view == null ||
-            (movement == 0 && location.revision == 0)) return@LaunchedEffect
+            (movement == 0 && !location.textNavigation)) return@LaunchedEffect
         val chapterIndex = location.index
         delay(650)
         val current = view ?: return@LaunchedEffect
@@ -377,14 +393,7 @@ internal fun BookReader(
         if (!attached || mode == Mode.Read || !playing) return@LaunchedEffect
         while (true) {
             delay(3500)
-            val anchor = playback.anchor ?: continue
-            val fraction = playback.fraction
-            val chapterIndex = location.index
-            stage(book.progressPayload(chapterIndex, null, anchor, fraction, true))
-            if (mode == Mode.Follow && view?.chapterPath == book.spine[chapterIndex].path) view?.capturePosition(anchor) { cfi, _ ->
-                if (location.index == chapterIndex && mode == Mode.Follow && cfi != null && view?.chapterPath == book.spine[chapterIndex].path)
-                    stage(book.progressPayload(chapterIndex, cfi, anchor, fraction, true))
-            }
+            stagePlayback()
         }
     }
 
@@ -410,6 +419,7 @@ internal fun BookReader(
         Column(Modifier.then(if (controls || mode == Mode.Listen) Modifier.safeDrawingPadding() else Modifier)) {
             if (controls || mode == Mode.Listen) {
                 FolioBar(stringResource(if (mode == Mode.Listen) R.string.player_title else mode.label), back = ::leaveReader, overflow = readerMenu) {
+                    if (mode == Mode.Listen) ListenOutputButton()
                     if (mode == Mode.Listen) IconButton(onClick = { dialog = R.string.contents }) {
                         Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.List, stringResource(R.string.contents))
                     }
@@ -490,6 +500,7 @@ internal fun BookReader(
                             inspection = null
                             location = Location(place?.chapter ?: 0, place?.anchor, location.revision + 1, place?.cfi, 0)
                             val edit = prefs.edit().putInt("$bookKey.chapter", location.index)
+                                .putString("$bookKey.passage", sync.remote?.toString())
                             if (place == null) edit.putInt("$bookKey.scroll.0", 0).remove("$bookKey.cfi.0")
                                 .putInt("$bookKey.cue.0", 0).remove("$bookKey.elapsed.0").putFloat("$bookKey.shelfPercent", 0f)
                             edit.apply()
@@ -497,7 +508,7 @@ internal fun BookReader(
                         TextButton(enabled = !syncing, onClick = {
                             if (sync.local?.place(book,mode) != null) scope.launch { syncPending(true) }
                             else if (mode != Mode.Read && attached && playback.anchor != null) {
-                                stage(book.progressPayload(playback.chapter,null,playback.anchor,playback.fraction,true))
+                                stagePlayback()
                                 scope.launch { syncPending(true) }
                             } else view?.capturePosition(null) { cfi, part ->
                                 stage(book.progressPayload(displayed.index,cfi,null,part,false))
@@ -534,7 +545,7 @@ internal fun BookReader(
                         if (attached) {
                             if (playing) saveNow()
                             playback.toggle()
-                        } else playback.start(context, openedAudio, location.index, location.anchor, true, sync, location.cfi)
+                        } else playback.start(context, openedAudio.copy(mode = mode), location.index, location.anchor, true, sync, location.cfi)
                         if (playback.playing && mode == Mode.Follow) controls = false
                     },
                 )
@@ -629,6 +640,7 @@ internal fun BookReader(
                     if (media != null) TextButton(onClick = {
                         val anchor = media
                         selectedPassage = null
+                        playback.setListenEligible(false)
                         mode = Mode.Follow
                         prefs.edit().putInt("$bookKey.mode", mode.ordinal).apply()
                         inspection = null
