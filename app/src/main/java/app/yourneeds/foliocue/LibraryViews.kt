@@ -9,6 +9,7 @@ import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -92,15 +94,24 @@ internal fun BookCover(title: String, covers: CoverStore, key: String, sources: 
         value = null
         value = covers.get(key, sources)
     }
-    Surface(modifier.clearAndSetSemantics { }, color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.small) {
+    BoxWithConstraints(modifier.clearAndSetSemantics { }, contentAlignment = Alignment.Center) {
         val image = bitmap
-        if (image != null) Image(image.asImageBitmap(), contentDescription = null,
-            modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-        else Column(Modifier.fillMaxSize().padding(8.dp), verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(painterResource(R.drawable.shelf_book), null)
-            if (title.isNotBlank()) {
-                Text(title, style = MaterialTheme.typography.labelMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        if (image != null) {
+            // Keep the shelf slot stable, but round the artwork's own edges rather than
+            // a larger coloured box. Different cover ratios remain intact and uncropped.
+            val ratio = image.width.toFloat() / image.height
+            val width = minOf(maxWidth, maxHeight * ratio)
+            Image(image.asImageBitmap(), contentDescription = null,
+                modifier = Modifier.size(width, width / ratio).clip(RoundedCornerShape(4.dp)),
+                contentScale = ContentScale.Fit)
+        } else Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(4.dp)) {
+            Column(Modifier.fillMaxSize().padding(8.dp), verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(painterResource(R.drawable.shelf_book), null)
+                if (title.isNotBlank()) {
+                    Text(title, style = MaterialTheme.typography.labelMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
     }
