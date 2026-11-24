@@ -255,7 +255,7 @@ internal fun DetailScreen(
             }
         }
     }
-    if (confirm) AlertDialog(onDismissRequest = { confirm = false }, text = { Text(stringResource(R.string.offline_confirm)) },
+    if (confirm) AlertDialog(onDismissRequest = { confirm = false }, text = { AppVolumeFeedback(); Text(stringResource(R.string.offline_confirm)) },
         confirmButton = { TextButton(onClick = { confirm = false; remove() }) { Text(stringResource(R.string.offline_remove)) } },
         dismissButton = { TextButton(onClick = { confirm = false }) { Text(stringResource(R.string.cancel)) } })
 }

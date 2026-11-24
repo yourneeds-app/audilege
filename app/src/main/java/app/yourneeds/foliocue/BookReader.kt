@@ -460,6 +460,7 @@ internal fun BookReader(
         },
     ) + if (mode == Mode.Follow) listOf(MenuItem(R.string.sync_timing) { dialog = R.string.sync_timing }) else emptyList()
     PlayerTheme(mode, colors, book, online, file, covers) {
+    AppVolumeFeedback()
     SystemBarAppearance(activity)
     Surface(color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground, modifier = Modifier.fillMaxSize()) {
         Column(Modifier.then(if (controls || mode == Mode.Listen) Modifier.safeDrawingPadding() else Modifier)) {
@@ -640,6 +641,7 @@ internal fun BookReader(
             title = { Text(stringResource(title)) },
             confirmButton = { TextButton(onClick = { dialog = null }) { Text(stringResource(R.string.close)) } },
             text = {
+                AppVolumeFeedback()
                 if (title == R.string.player_modes) {
                     Column {
                         listOf(Mode.Read, Mode.Listen, Mode.Follow).forEach { entry ->
@@ -710,6 +712,7 @@ internal fun BookReader(
         AlertDialog(onDismissRequest = { selectedPassage = null },
             title = { Text(stringResource(R.string.reader_passage)) },
             text = {
+                AppVolumeFeedback()
                 Column {
                     Text(passage.label)
                     TextButton(onClick = {
@@ -737,7 +740,8 @@ internal fun Choice(label: String, options: List<Int>, selected: Int, select: (I
     var expanded by remember { mutableStateOf(false) }
     Box {
         TextButton(onClick = { expanded = true }) { Text("$label · ${stringResource(options[selected])}") }
-        DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenu(expanded, onDismissRequest = { expanded = false }, modifier = Modifier.appVolumeKeys()) {
+            AppVolumeFeedback()
             options.forEachIndexed { index, title ->
                 DropdownMenuItem(text = { Text(stringResource(title)) }, onClick = { select(index); expanded = false })
             }

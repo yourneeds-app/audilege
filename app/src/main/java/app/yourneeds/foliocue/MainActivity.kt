@@ -34,6 +34,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
+    internal val appVolume by lazy { AppVolumeControl(AndroidVolumeBackend(this)) }
+    private var releaseVolumeKeys: (() -> Unit)? = null
+    override fun onResume() { super.onResume(); appVolume.resume() }
+    override fun onPause() { appVolume.pause(); super.onPause() }
+    override fun onDestroy() { releaseVolumeKeys?.invoke(); releaseVolumeKeys = null; super.onDestroy() }
     private var playerRequest by mutableIntStateOf(0)
     override fun attachBaseContext(newBase: Context) {
         val language = newBase.getSharedPreferences("display", MODE_PRIVATE).getString("language", "").orEmpty()
@@ -44,6 +49,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        releaseVolumeKeys = installVolumeKeys(window, appVolume)
         enableEdgeToEdge()
         if (intent.action == PlaybackService.OPEN_PLAYER) playerRequest++
         setContent { FolioCue(this, playerRequest) }
@@ -231,6 +237,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
 
     MaterialTheme(colorScheme = appAppearanceColors(accent)) {
         val book = opened
+        if (book == null) AppVolumeFeedback()
         if (book == null) SystemBarAppearance(activity)
         if (book != null) {
             LaunchedEffect(book.file, folder) {

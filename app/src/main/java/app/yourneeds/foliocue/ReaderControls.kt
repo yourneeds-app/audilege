@@ -199,7 +199,8 @@ private fun SleepTimer(modifier: Modifier) {
     }
     Box(modifier) {
         PlaybackSetting(stringResource(R.string.audio_timer),status,Modifier.fillMaxWidth()) { menu = true }
-        DropdownMenu(expanded = menu,onDismissRequest = { menu = false }) {
+        DropdownMenu(expanded = menu,onDismissRequest = { menu = false }, modifier = Modifier.appVolumeKeys()) {
+            AppVolumeFeedback()
             listOf(0,5,15,30,45,60,-1).forEach { choice ->
                 DropdownMenuItem(text = { Text(when (choice) {
                     0 -> stringResource(R.string.audio_off)

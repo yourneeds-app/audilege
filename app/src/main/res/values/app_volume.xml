@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_volume_percent">%1$d %%</string>
+    <string name="app_volume_value">Volume · %1$d %%</string>
+    <string name="app_volume_fixed">Volume is fixed for this output.</string>
+    <string name="app_volume_failed">Could not change the volume. Try the volume buttons again.</string>
+</resources>

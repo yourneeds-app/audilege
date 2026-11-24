@@ -425,6 +425,7 @@ internal fun SettingsScreen(
     if (accessDialog) AlertDialog(onDismissRequest = { accessDialog = false; input = "" },
         title = { Text(stringResource(R.string.design_private_access)) },
         text = {
+            AppVolumeFeedback()
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.github_token_hint))
                 OutlinedTextField(input, { input = it }, Modifier.fillMaxWidth(), singleLine = true,

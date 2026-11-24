@@ -34,7 +34,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.IOException
-import kotlin.math.roundToInt
 
 @Composable
 internal fun ListenOutputButton() {
@@ -118,6 +117,7 @@ private fun ListenOutputChooser(dismiss: () -> Unit) {
         return
     }
     ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        AppVolumeFeedback()
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween) {
@@ -144,7 +144,7 @@ private fun ListenOutputChooser(dismiss: () -> Unit) {
                         }
                     }
                 }
-                if (activeName != null) SpeakerVolume(activeName)
+                AppOutputVolume()
                 val discoveryMessage = when {
                     supported == false -> R.string.route_unavailable
                     discovery.failed -> R.string.route_search_failed
@@ -203,18 +203,6 @@ private fun RouteOption(name: String, detail: String?, selected: Boolean, enable
 }
 
 @Composable
-private fun SpeakerVolume(name: String) {
-    val player = AudilegePlayback
-    var pending by remember(name) { mutableStateOf<Int?>(null) }
-    val volume = pending ?: player.outputVolume
-    val label = stringResource(R.string.route_volume, name)
-    Text(stringResource(R.string.route_volume_value, volume), style = MaterialTheme.typography.labelMedium)
-    Slider(value = volume.toFloat(), onValueChange = { pending = it.roundToInt() },
-        onValueChangeFinished = { pending?.let(player::changeOutputVolume); pending = null }, valueRange = 0f..100f,
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = label })
-}
-
-@Composable
 private fun AirPlayNotices(back: () -> Unit) {
     val assets = LocalContext.current.assets
     val directory = "airplay-licenses"
@@ -230,6 +218,7 @@ private fun AirPlayNotices(back: () -> Unit) {
         title = { Text(filename?.let { licenseTitle(it)?.let { label -> stringResource(label) } ?: it.removeSuffix(".txt") }
             ?: stringResource(R.string.route_licenses)) },
         text = {
+            AppVolumeFeedback()
             if (filename == null) {
                 val files = names
                 if (files == null) LinearProgressIndicator()

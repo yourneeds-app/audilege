@@ -132,7 +132,8 @@ internal fun FolioBar(
                 IconButton(onClick = { expanded = true }) {
                     Icon(Icons.Default.MoreVert, stringResource(R.string.open_menu))
                 }
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.appVolumeKeys()) {
+                    AppVolumeFeedback()
                     overflow.forEach { item ->
                         DropdownMenuItem(text = { Text(stringResource(item.label)) }, onClick = {
                             expanded = false

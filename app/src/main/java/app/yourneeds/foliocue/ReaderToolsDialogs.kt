@@ -60,6 +60,7 @@ internal fun ReaderSearchDialog(book: Publication, open: (ReaderTarget) -> Unit,
     AlertDialog(onDismissRequest = dismiss, title = { Text(stringResource(R.string.reader_search)) },
         confirmButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.close)) } },
         text = {
+            AppVolumeFeedback()
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(query, { query = it }, singleLine = true, label = { Text(stringResource(R.string.reader_search_query)) })
                 if (scanning) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -86,6 +87,7 @@ internal fun ReaderBookmarksDialog(book: Publication, marks: List<ReaderTarget>,
     AlertDialog(onDismissRequest = dismiss, title = { Text(stringResource(R.string.reader_bookmarks)) },
         confirmButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.close)) } },
         text = {
+            AppVolumeFeedback()
             Column {
                 TextButton(onClick = add) { Text(stringResource(R.string.reader_add_mark)) }
                 if (marks.isEmpty()) Text(stringResource(R.string.reader_no_marks))

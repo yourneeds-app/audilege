@@ -19,7 +19,6 @@
     <string name="route_bluetooth_settings">Bluetooth settings</string>
     <string name="route_system_unavailable">Android could not open the device settings.</string>
     <string name="route_volume">Volume on %1$s</string>
-    <string name="route_volume_value">Speaker volume · %1$d %%</string>
     <string name="route_licenses">AirPlay software licenses</string>
     <string name="route_licenses_unavailable">License texts could not be opened.</string>
 </resources>
