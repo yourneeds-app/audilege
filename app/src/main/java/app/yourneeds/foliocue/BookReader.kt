@@ -47,7 +47,7 @@ internal enum class Typeface(val label: Int, val css: String) {
 }
 
 private data class Location(val index: Int, val anchor: String? = null, val revision: Int = 0,
-    val cfi: String? = null, val scroll: Int? = null, val textNavigation: Boolean = false)
+    val cfi: String? = null, val scroll: Int? = null, val textNavigation: Boolean = false, val serverSeconds: Double? = null)
 
 private data class ListenJump(val start: Int, val direction: Int, val anchor: String? = null)
 private sealed interface SectionAudio {
@@ -71,15 +71,22 @@ internal fun BookReader(
             Mode.entries.getOrElse(prefs.getInt("$bookKey.mode", 0)) { Mode.Follow }
         } else Mode.Read)
     }
+    fun stored(key: String) = prefs.getString("$bookKey.$key", null)?.let { runCatching { JSONObject(it) }.getOrNull() }
+    val previousBaseline = remember { stored("sync.base") }
     val sync = remember { online?.let { ReadingSync.open(it, serverProgress, prefs, bookKey) } }
+    fun savedPosition() = sync?.resume ?: serverProgress ?: stored("passage")
+    fun savedPlace() = savedPosition()?.let { it.place(book, mode) ?: ReadingPlace(0, null, null) }
+    fun canUseCheckpoint(selected: JSONObject): Boolean {
+        val chapter = selected.optInt("mediaOverlaySectionIndex", -1)
+        return prefs.contains("$bookKey.elapsed.$chapter") &&
+            canRestoreLocalAudio(selected, stored("passage"), stored("audioServer") ?: previousBaseline)
+    }
     val initialPlace = remember {
         if (AudilegePlayback.activeBook?.file == file && (resumeSession ||
                 AudilegePlayback.outputId != null || AudilegePlayback.connectingOutput != null)) {
             return@remember ReadingPlace(AudilegePlayback.chapter, null, AudilegePlayback.anchor)
         }
-        val place = sync?.resume ?: serverProgress ?: prefs.getString("$bookKey.passage", null)
-            ?.let { runCatching { JSONObject(it) }.getOrNull() }
-        place?.place(book, mode) ?: if (place != null) ReadingPlace(0, null, null) else null
+        savedPlace()
     }
     var location by remember {
         val index = initialPlace?.chapter ?: prefs.getInt("$bookKey.chapter", 0).coerceIn(book.spine.indices)
@@ -114,6 +121,7 @@ internal fun BookReader(
     var chapterFailed by remember(displayed) { mutableStateOf(false) }
     var view by remember { mutableStateOf<ReaderPage?>(null) }
     val audioError = attached && playback.failed
+    var chosenAudioStart by remember { mutableStateOf<Location?>(null) }
     var listenJump by remember(book, mode) { mutableStateOf<ListenJump?>(null) }
     var audioRetry by remember { mutableIntStateOf(0) }
     var readingInteraction by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
@@ -163,6 +171,22 @@ internal fun BookReader(
         stage(active.publication.progressPayload(playback.chapter, null, playback.anchor, playback.fraction, true))
     }
 
+    fun startAudio() {
+        val chosen = chosenAudioStart
+        chosenAudioStart = null
+        if (chosen != null) {
+            playback.start(context, openedAudio.copy(mode = mode), chosen.index, chosen.anchor, false, sync, chosen.cfi, chosen.serverSeconds)
+            return
+        }
+        // The media notification can stop playback while this reader still holds its opening location.
+        val selected = savedPosition()
+        val saved = selected?.let { it.place(book, mode) ?: ReadingPlace(0, null, null) }
+        val index = saved?.chapter ?: prefs.getInt("$bookKey.chapter", 0).coerceIn(book.spine.indices)
+        val useLocal = selected == null || (saved?.anchor != null && canUseCheckpoint(selected))
+        val seconds = if (useLocal) null else selected?.optDouble("positionSeconds")?.takeIf(Double::isFinite)
+        playback.start(context, openedAudio.copy(mode = mode), index, saved?.anchor, useLocal, sync, saved?.cfi, seconds)
+    }
+
     fun go(index: Int, anchor: String? = null, continuePlaying: Boolean = false) {
         if (index !in book.spine.indices) return
         if (!continuePlaying && index == location.index && anchor != null && mode == Mode.Follow) {
@@ -181,6 +205,7 @@ internal fun BookReader(
             playback.start(context, openedAudio.copy(mode = mode), index, anchor, false, sync)
         } else if (playback.activeBook?.file == file) playback.stop()
         location = Location(index, anchor, location.revision + 1, textNavigation = mode == Mode.Read)
+        if (!continuePlaying && mode != Mode.Read) chosenAudioStart = location
         prefs.edit().putInt("$bookKey.chapter", index).apply()
     }
 
@@ -402,8 +427,17 @@ internal fun BookReader(
     LaunchedEffect(file) {
         val leavingSpeaker = mode != Mode.Listen && (playback.outputId != null || playback.connectingOutput != null)
         playback.setListenEligible(mode == Mode.Listen)
-        if (!leavingSpeaker && initialMode != null && mode != Mode.Read && (!resumeSession || playback.activeBook?.file != file))
-            playback.start(context, openedAudio.copy(mode = mode), location.index, location.anchor, initialPlace == null, sync, location.cfi)
+        if (!leavingSpeaker && initialMode != null && mode != Mode.Read) {
+            val active = playback.activeBook?.file == file
+            if (!active) startAudio()
+            else if (!resumeSession && !playback.playing) {
+                val saved = savedPlace()
+                if (saved?.chapter == playback.chapter && saved.anchor != null && saved.anchor == playback.anchor &&
+                    savedPosition()?.let(::canUseCheckpoint) == true)
+                    playback.resume()
+                else startAudio()
+            }
+        }
         if (mode == Mode.Read && playback.activeBook?.file == file) playback.pause()
     }
     LaunchedEffect(attached, playback.chapter) {
@@ -560,13 +594,17 @@ internal fun BookReader(
                             sync.discardLocal()
                             syncState = SyncState.Synced
                             conflictWriteFailed = false
-                            if (attached) playback.stop()
+                            if (attached) playback.stop(savePosition = false)
                             inspection = null
-                            location = Location(place?.chapter ?: 0, place?.anchor, location.revision + 1, place?.cfi, 0)
+                            location = Location(place?.chapter ?: 0, place?.anchor, location.revision + 1, place?.cfi, 0,
+                                serverSeconds = sync.remote?.optDouble("positionSeconds")?.takeIf(Double::isFinite))
+                            chosenAudioStart = location
                             val edit = prefs.edit().putInt("$bookKey.chapter", location.index)
                                 .putString("$bookKey.passage", sync.remote?.toString())
+                                .remove("$bookKey.cue.${location.index}").remove("$bookKey.elapsed.${location.index}")
+                                .remove("$bookKey.replayUntil.${location.index}").remove("$bookKey.audioServer")
                             if (place == null) edit.putInt("$bookKey.scroll.0", 0).remove("$bookKey.cfi.0")
-                                .putInt("$bookKey.cue.0", 0).remove("$bookKey.elapsed.0").putFloat("$bookKey.shelfPercent", 0f)
+                                .putFloat("$bookKey.shelfPercent", 0f)
                             edit.apply()
                         }) { Text(stringResource(R.string.sync_remote)) }
                         TextButton(enabled = !retryingSync, onClick = {
@@ -627,7 +665,7 @@ internal fun BookReader(
                         if (attached) {
                             if (playing) saveNow()
                             playback.toggle()
-                        } else playback.start(context, openedAudio.copy(mode = mode), location.index, location.anchor, true, sync, location.cfi)
+                        } else startAudio()
                         if (playback.playing && mode == Mode.Follow) controls = false
                     },
                 )

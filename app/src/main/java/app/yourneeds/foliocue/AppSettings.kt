@@ -352,6 +352,7 @@ internal fun SettingsScreen(
     val mode = watchPreference(prefs, setOf("appTheme")) { prefs.getInt("appTheme", 0).coerceIn(0, 2) }
     val adaptive = watchPreference(prefs, setOf("coverAccent")) { prefs.getBoolean("coverAccent", true) }
     val skip = watchPreference(prefs, setOf("skipSeconds")) { prefs.getInt("skipSeconds", 15) }
+    val resumeRewind = watchPreference(prefs, setOf("resumeRewindSeconds")) { prefs.getInt("resumeRewindSeconds", 0) }
     val language = watchPreference(display, setOf("language")) { display.getString("language", "").orEmpty() }
     fun open(url: String) {
         browserFailed = runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isFailure
@@ -389,6 +390,12 @@ internal fun SettingsScreen(
                         R.string.design_30s, R.string.design_60s), options.indexOf(skip).takeIf { it >= 0 } ?: 1) {
                         prefs.edit().putInt("skipSeconds", options[it]).apply()
                     }
+                    val rewindOptions = listOf(0, 5, 10, 15, 30)
+                    Choice(
+                        stringResource(R.string.design_resume_rewind),
+                        listOf(R.string.audio_off, R.string.design_5s, R.string.design_10s, R.string.design_15s, R.string.design_30s),
+                        rewindOptions.indexOf(resumeRewind).coerceAtLeast(0),
+                    ) { prefs.edit().putInt("resumeRewindSeconds", rewindOptions[it]).apply() }
                 }
                 SettingsGroup(R.string.language, expanded == R.string.language, { expand(R.string.language) }) {
                     val options = listOf("", "de", "en")

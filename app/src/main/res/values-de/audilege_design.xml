@@ -26,6 +26,8 @@
     <string name="design_reading">Leseansicht</string>
     <string name="design_playback">Wiedergabe</string>
     <string name="design_skip">Sprungweite</string>
+    <string name="design_resume_rewind">Beim Fortsetzen zurückspringen</string>
+    <string name="design_5s">5 Sekunden</string>
     <string name="design_10s">10 Sekunden</string>
     <string name="design_15s">15 Sekunden</string>
     <string name="design_30s">30 Sekunden</string>

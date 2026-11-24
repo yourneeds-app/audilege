@@ -26,6 +26,8 @@
     <string name="design_reading">Reading style</string>
     <string name="design_playback">Playback</string>
     <string name="design_skip">Skip interval</string>
+    <string name="design_resume_rewind">Rewind on resume</string>
+    <string name="design_5s">5 seconds</string>
     <string name="design_10s">10 seconds</string>
     <string name="design_15s">15 seconds</string>
     <string name="design_30s">30 seconds</string>
