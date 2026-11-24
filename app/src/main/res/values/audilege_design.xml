@@ -1,0 +1,37 @@
+<resources>
+    <string name="design_expanded">Expanded</string>
+    <string name="design_collapsed">Collapsed</string>
+    <string name="design_sample_intro">The harbor lay quiet in the night.</string>
+    <string name="design_sample_active">The wind swept across the quay.</string>
+    <string name="design_spacing">Line spacing</string>
+    <string name="design_margins">Page margins</string>
+    <string name="design_navigation">Reading direction</string>
+    <string name="design_scroll">Scroll</string>
+    <string name="design_pages">Turn pages</string>
+    <string name="design_mark">Text highlighting</string>
+    <string name="design_fill">Highlight background</string>
+    <string name="design_underline">Underline</string>
+    <string name="design_mark_color">Highlight color</string>
+    <string name="design_amber">Amber</string>
+    <string name="design_strength">Highlight intensity</string>
+    <string name="design_soft">Soft</string>
+    <string name="design_vivid">Strong</string>
+    <string name="design_profile_save">Save my reading style</string>
+    <string name="design_profile_saved">Reading style saved</string>
+    <string name="design_profile_restore">Apply my reading style</string>
+    <string name="design_release_missing">No accessible release found. Check the releases page or connect private access.</string>
+    <string name="design_release_limited">GitHub has limited this request. Try again later or open the releases page.</string>
+    <string name="design_app_theme">App appearance</string>
+    <string name="design_cover">Use book cover colors in details and player</string>
+    <string name="design_reading">Reading style</string>
+    <string name="design_playback">Playback</string>
+    <string name="design_skip">Skip interval</string>
+    <string name="design_10s">10 seconds</string>
+    <string name="design_15s">15 seconds</string>
+    <string name="design_30s">30 seconds</string>
+    <string name="design_60s">60 seconds</string>
+    <string name="design_never">Never</string>
+    <string name="design_last_check">Last successful check: %1$s</string>
+    <string name="design_auto_updates">Check for updates automatically</string>
+    <string name="design_private_access">Private release access</string>
+</resources>

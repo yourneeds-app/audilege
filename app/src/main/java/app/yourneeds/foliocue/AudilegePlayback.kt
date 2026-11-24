@@ -1,0 +1,347 @@
+package app.yourneeds.foliocue
+
+import android.content.Context
+import android.content.Intent
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.os.SystemClock
+import androidx.compose.runtime.*
+import java.io.File
+import kotlinx.coroutines.*
+
+/** The reader, mini-player and Android media session share one media clock and one set of commands. */
+internal object AudilegePlayback {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var context: Context? = null
+    private var focus: AudioFocusRequest? = null
+    private var resumeAfterFocus = false
+    private var job: Job? = null
+    private var load: Job? = null
+    private var narration: Narration? = null
+    private var sync: ReadingSync? = null
+    private val flushing = mutableSetOf<ReadingSync>()
+    private var readerVisible = false
+    var activeBook by mutableStateOf<OpenBook?>(null)
+        private set
+    var chapter by mutableIntStateOf(0)
+        private set
+    var playing by mutableStateOf(false)
+        private set
+    var loading by mutableStateOf(false)
+        private set
+    var failed by mutableStateOf(false)
+        private set
+    var marker by mutableStateOf<String?>(null)
+        private set
+    val anchor get() = narration?.anchor
+    val fraction get() = narration?.fraction ?: 0.0
+    var progress by mutableStateOf<TrackProgress?>(null)
+        private set
+    var speed by mutableFloatStateOf(1f)
+        private set
+    var highlightDelay = 0
+    var sleepEndChapter by mutableStateOf(false)
+        private set
+    var sleepUntil by mutableLongStateOf(0L)
+        private set
+    val skipSeconds: Int get() = prefs?.getInt("skipSeconds", 15)?.coerceIn(5,120) ?: 15
+    private val prefs get() = context?.getSharedPreferences("reader", Context.MODE_PRIVATE)
+    private var lastPersist = 0L
+    var service: PlaybackService? = null
+    var startPending = false
+
+    fun connect(book: OpenBook, context: Context, sync: ReadingSync?) {
+        this.context = context.applicationContext
+        if (activeBook != null && activeBook?.file != book.file) stop()
+        this.sync = sync
+        readerVisible = true
+    }
+
+    fun readerVisible(visible: Boolean) { readerVisible = visible }
+
+    fun start(context: Context, book: OpenBook, index: Int, anchor: String?, resumeSaved: Boolean, bridge: ReadingSync?, cfi: String? = null) {
+        if (index !in book.publication.spine.indices) return
+        this.context = context.applicationContext
+        if (activeBook != null && activeBook?.file != book.file) {
+            val visible = readerVisible
+            stop()
+            readerVisible = visible
+        }
+        sync = bridge
+        activeBook = book.copy(mode = Mode.Listen, resumeSession = true)
+        speed = prefs?.getFloat("speed", 1f)?.coerceIn(0.75f, 2f) ?: 1f
+        highlightDelay = prefs?.getInt("${keyOf(book.file.absolutePath)}.highlightDelay",0) ?: 0
+        if (!requestFocus()) {
+            failed = true
+            playing = false
+            return
+        }
+        playing = true
+        if (!requestService()) return
+        openChapter(index, anchor, resumeSaved, cfi)
+    }
+
+    private fun openChapter(index: Int, anchor: String?, resumeSaved: Boolean, cfi: String? = null) {
+        val opened = activeBook ?: return
+        val ctx = context ?: return
+        job?.cancel()
+        load?.cancel()
+        narration?.close()
+        narration = null
+        marker = null
+        progress = null
+        failed = false
+        loading = true
+        chapter = index
+        val key = keyOf(opened.file.absolutePath)
+        prefs?.edit()?.putInt("$key.chapter", index)?.apply()
+        val publication = opened.publication
+        job = scope.launch {
+            try {
+                val marks = withContext(Dispatchers.IO) { publication.cues(publication.spine[index]) }
+                if (marks.isEmpty()) {
+                    loading = false
+                    pause()
+                    return@launch
+                }
+                val resolvedAnchor = anchor ?: cfi?.let { withContext(Dispatchers.IO) { publication.narrationAnchor(index,it,marks) } }
+                val marked = resolvedAnchor?.let { target -> marks.indexOfFirst { it.fragment == target }.takeIf { it >= 0 } }
+                val saved = if (resumeSaved) prefs?.getInt("$key.cue.$index",0) ?: 0 else 0
+                val engine = Narration(ctx, marks, marked ?: saved, { marker = it }, ::onFailure)
+                narration = engine
+                val elapsed = if (resumeSaved && marked == null) prefs?.getInt("$key.elapsed.$index",-1) ?: -1 else -1
+                if (elapsed >= 0) engine.seek(elapsed)
+                progress = engine.progress()
+                attach(opened, engine)
+                var lastUI = 0L
+                while (isActive) {
+                    val now = SystemClock.elapsedRealtime()
+                    if (sleepUntil != 0L && now >= sleepUntil) {
+                        sleep(0)
+                        pause()
+                    }
+                    if (playing && !loading && !failed) {
+                        if (engine.tick(highlightDelay)) attach(opened, engine)
+                        if (engine.finished) {
+                            checkpoint()
+                            if (index == publication.spine.lastIndex) {
+                                pause()
+                                return@launch
+                            }
+                            if (sleepEndChapter) { sleep(0); pause() }
+                            openChapter(index + 1, null, false)
+                            return@launch
+                        }
+                        if (now - lastPersist >= 5000) checkpoint()
+                    }
+                    if (now - lastUI >= 250) {
+                        progress = engine.progress()
+                        lastUI = now
+                        service?.refresh()
+                    }
+                    delay(if (playing && !loading) 24L else 200L)
+                }
+            } catch (cancel: CancellationException) { throw cancel }
+              catch (_: Exception) { onFailure() }
+        }
+    }
+
+    private fun attach(opened: OpenBook, engine: Narration) {
+        val ctx = context ?: return
+        load?.cancel()
+        loading = true
+        load = scope.launch {
+            try {
+                engine.setPlaying(playing, speed)
+                val source = opened.publication.audioStream
+                val path = engine.audio
+                if (source != null) {
+                    val stream = withContext(Dispatchers.IO) { source(path) }
+                    engine.attach(stream)
+                } else {
+                    val part = File.createTempFile("audilege-audio-", ".part", ctx.cacheDir)
+                    try {
+                        withContext(Dispatchers.IO) {
+                            val input = opened.publication.open(path) ?: error("Missing audio file")
+                            input.use { from -> part.outputStream().use { to -> from.copyTo(to) } }
+                        }
+                        engine.attach(part)
+                    } finally { part.delete() }
+                }
+                engine.setPlaying(playing, speed)
+                loading = false
+                service?.refresh(force = true)
+            } catch (cancel: CancellationException) { throw cancel }
+              catch (_: Exception) { onFailure() }
+        }
+    }
+
+    private fun onFailure() {
+        failed = true
+        loading = false
+        pause()
+    }
+
+    fun toggle() { if (playing) pause() else resume() }
+
+    fun resume() {
+        if (activeBook == null) return
+        if (!requestFocus()) { failed = true; return }
+        playing = true
+        if (!requestService()) return
+        if (failed || narration == null || narration?.finished == true) {
+            val completed = narration?.finished == true
+            openChapter(chapter, null, !completed)
+        } else narration?.setPlaying(true, speed)
+        service?.refresh(force = true)
+    }
+
+    fun pause(releaseFocus: Boolean = true) {
+        playing = false
+        runCatching { narration?.setPlaying(false, speed) }
+        if (releaseFocus) abandonFocus()
+        checkpoint()
+        service?.refresh(force = true)
+    }
+
+    fun changeSpeed(value: Float) {
+        speed = value.coerceIn(0.75f, 2f)
+        prefs?.edit()?.putFloat("speed", speed)?.apply()
+        if (playing && !loading) narration?.setPlaying(true, speed)
+        service?.refresh(force = true)
+    }
+
+    fun seekAnchor(anchor: String): Boolean {
+        if (loading || failed || job?.isActive != true) return false
+        val elapsed = narration?.timeForAnchor(anchor) ?: return false
+        seekTo(elapsed)
+        if (!playing) resume()
+        return true
+    }
+
+    fun seekTo(elapsedMs: Int) {
+        val engine = narration ?: return
+        if (failed || loading) return
+        val opened = activeBook ?: return
+        if (engine.seek(elapsedMs)) attach(opened, engine)
+        marker = engine.anchor
+        progress = engine.progress()
+        checkpoint()
+        service?.refresh(force = true)
+    }
+
+    fun skip(direction: Int) = seekTo((progress?.elapsedMs ?: 0) + direction * skipSeconds * 1000)
+
+    fun chapterBy(delta: Int) {
+        val book = activeBook ?: return
+        val target = chapter + delta
+        if (target in book.publication.spine.indices) {
+            checkpoint()
+            openChapter(target, null, false)
+        }
+    }
+
+    fun sleep(minutes: Int) {
+        sleepEndChapter = minutes < 0
+        sleepUntil = if (minutes > 0) SystemClock.elapsedRealtime() + minutes * 60_000L else 0L
+    }
+
+    fun checkpoint() {
+        val book = activeBook ?: return
+        val engine = narration ?: return
+        val key = keyOf(book.file.absolutePath)
+        val p = runCatching { engine.progress() }.getOrNull() ?: return
+        lastPersist = SystemClock.elapsedRealtime()
+        prefs?.edit()?.putInt("$key.chapter",chapter)?.putInt("$key.cue.$chapter", engine.index)
+            ?.putInt("$key.elapsed.$chapter",p.elapsedMs)
+            ?.putFloat("$key.shelfPercent", ((chapter + engine.fraction) * 100 / book.publication.spine.size).toFloat().coerceIn(0f,100f))
+            ?.apply()
+        if (!readerVisible) {
+            val bridge = sync ?: return
+            book.publication.progressPayload(chapter, null, engine.anchor, engine.fraction, true)?.let {
+                bridge.remember(it)
+                if (flushing.add(bridge)) scope.launch {
+                    try {
+                        do {
+                            val submitted = bridge.pending ?: break
+                            val result = bridge.flush()
+                        } while (result == SyncState.Pending && bridge.pending !== submitted)
+                    } catch (cancel: CancellationException) {
+                        throw cancel
+                    } catch (_: Exception) {
+                        // The pending position is durable and retried by the next checkpoint or reconnect.
+                    } finally { flushing.remove(bridge) }
+                }
+            }
+        }
+    }
+
+    fun stop() {
+        checkpoint()
+        abandonFocus()
+        job?.cancel()
+        load?.cancel()
+        job = null
+        load = null
+        narration?.close()
+        narration = null
+        sync = null
+        readerVisible = false
+        activeBook = null
+        startPending = false
+        playing = false
+        failed = false
+        loading = false
+        marker = null
+        progress = null
+        sleep(0)
+        service?.stopSession()
+    }
+
+    private fun requestService(): Boolean {
+        val ctx = context ?: return false
+        if (service?.foreground == true) return true
+        try {
+            ctx.startForegroundService(Intent(ctx, PlaybackService::class.java))
+            startPending = true
+            return true
+        } catch (_: IllegalStateException) {
+            onFailure()
+            return false
+        }
+    }
+
+    private fun requestFocus(): Boolean {
+        val ctx = context ?: return false
+        val manager = ctx.getSystemService(AudioManager::class.java)
+        if (focus != null) return true
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            .setWillPauseWhenDucked(true)
+            .setOnAudioFocusChangeListener { change ->
+                when (change) {
+                    AudioManager.AUDIOFOCUS_LOSS -> pause()
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                        resumeAfterFocus = playing || resumeAfterFocus
+                        pause(releaseFocus = false)
+                    }
+                    AudioManager.AUDIOFOCUS_GAIN -> if (resumeAfterFocus) {
+                        resumeAfterFocus = false
+                        resume()
+                    }
+                }
+            }.build()
+        if (manager.requestAudioFocus(request) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) return false
+        focus = request
+        return true
+    }
+
+    private fun abandonFocus() {
+        resumeAfterFocus = false
+        val old = focus ?: return
+        focus = null
+        context?.getSystemService(AudioManager::class.java)?.abandonAudioFocusRequest(old)
+    }
+}

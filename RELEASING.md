@@ -6,4 +6,6 @@ Run `gradle testDebugUnitTest assembleDebug lintDebug` with JDK 17 or 21, Androi
 
 Verify the candidate using `apksigner verify --print-certs` and compare its certificate digest with the preceding published APK. Use `aapt dump badging` to verify the package ID and increasing version code. Attach the signed APK and its SHA-256 digest to a GitHub release. A developer push and an APK release are separate steps.
 
-For the private test channel, sign in to GitHub in the Android browser and open the repository’s Releases page. Download the APK and open it in Android to install the update. A public update channel and an in-app update check can use a separate repository once the intended distribution is decided.
+Version 0.4.0 reads the latest published GitHub release from Settings → App updates. A public release and APK can be checked and downloaded without a GitHub account. The automatic check can be disabled. A successful automatic check is cached for six hours; a manual check always refreshes the result. For a private channel, existing users can configure optional read-only GitHub access or visit Releases in their signed-in browser.
+
+Name the APK `Audilege-<version>-debug.apk` for compatibility with the 0.3.x updater and tag the release `v<version>`. Open the asset on Android to confirm installation. Devices running 0.3.2 can reach the release in their browser using **Check for updates** or upgrade directly from the signed APK.

@@ -1,0 +1,20 @@
+<resources>
+    <string name="reader_search">Im Buch suchen</string>
+    <string name="reader_search_query">Suchbegriff</string>
+    <string name="reader_no_hits">Keine passende Passage gefunden.</string>
+    <string name="reader_search_failed">Nicht durchsuchbare Kapitel: %1$d</string>
+    <string name="reader_search_limit">Die ersten 100 Treffer</string>
+    <string name="reader_bookmarks">Lesezeichen</string>
+    <string name="reader_add_mark">Diese Stelle merken</string>
+    <string name="reader_remove_mark">Lesezeichen entfernen</string>
+    <string name="reader_no_marks">Hier erscheinen deine gemerkten Stellen.</string>
+    <string name="reader_last_place">Zur vorherigen Stelle</string>
+    <string name="reader_passage">Aktionen für diese Passage</string>
+    <string name="reader_follow_again">Zur Vorlesestelle</string>
+    <string name="reader_hear_here">Ab hier hören</string>
+    <string name="reader_no_voice_here">Für diese Passage ist keine Tonspur verfügbar.</string>
+    <string name="reader_local_place">Auf diesem Gerät · %1$s · %2$s</string>
+    <string name="reader_remote_place">Auf dem Server · %1$s · %2$s</string>
+    <string name="reader_time_unknown">Zeit unbekannt</string>
+    <string name="reader_here">Aktuelles Kapitel</string>
+</resources>

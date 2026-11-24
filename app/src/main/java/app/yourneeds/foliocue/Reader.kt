@@ -14,27 +14,61 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import java.io.File
 import java.util.UUID
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import org.json.JSONObject
 
 internal class ReaderPage(
     context: Context,
     publication: Publication,
-    chapter: Item,
+    private val chapter: Item,
     private val fragment: String?,
     private val previousScroll: Int,
+    private val startingCfi: String?,
     private val chapterLink: (String, String?) -> Unit,
     private val position: (Int) -> Unit,
 ) : WebView(context) {
     private val host = "${UUID.randomUUID()}.$BOOK_HOST"
     private var initialized = false
+    private var touchScrolling = false
+    private var followAudio = true
+    private var paged = false
+    val chapterPath get() = chapter.path
     var onPageTap: () -> Unit = {}
+    var onBrowse: () -> Unit = {}
+    var onPassage: (PagePassage) -> Unit = {}
+    var onTurnAtEdge: (Int) -> Unit = {}
+    var onPageError: () -> Unit = {}
     private var css = ""
     private var currentMark: String? = null
+    private var submittedMark: String? = null
+    private var markInFlight = false
+    private var closed = false
+    private var readyToShow: (() -> Unit)? = null
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(event: MotionEvent) = true
         override fun onSingleTapConfirmed(event: MotionEvent): Boolean {
-            onPageTap()
+            val x = event.x / width.coerceAtLeast(1)
+            if (paged && (x < 0.20f || x > 0.80f)) turn(if (x < 0.20f) -1 else 1)
+            else onPageTap()
             return true
+        }
+        override fun onScroll(first: MotionEvent?, current: MotionEvent, dx: Float, dy: Float): Boolean {
+            if (kotlin.math.abs(dy) > kotlin.math.abs(dx)) {
+                touchScrolling = true
+                if (followAudio) onBrowse()
+            }
+            return false
+        }
+        override fun onFling(first: MotionEvent?, last: MotionEvent, vx: Float, vy: Float): Boolean {
+            if (!paged || kotlin.math.abs(vx) < kotlin.math.abs(vy) || kotlin.math.abs(vx) < 250) return false
+            turn(if (vx < 0) 1 else -1)
+            return true
+        }
+        override fun onLongPress(event: MotionEvent) {
+            val density = resources.displayMetrics.density
+            passageAt(event.x / density, event.y / density, null, onPassage)
         }
     })
 
@@ -73,18 +107,28 @@ internal class ReaderPage(
                 )
             }
 
+            override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+                if (request.isForMainFrame) onPageError()
+            }
+
             override fun onPageFinished(view: WebView, url: String) {
                 applyAppearance()
                 postVisualStateCallback(0, object : VisualStateCallback() {
                     override fun onComplete(requestId: Long) {
-                        if (fragment != null) jump(fragment) else scrollTo(0, previousScroll)
+                        navigateToStart()
                         initialized = true
-                        highlight(currentMark)
+                        flushHighlight()
+                        readyToShow?.invoke()
+                        readyToShow = null
                     }
                 })
             }
         }
         loadUrl(Uri.Builder().scheme("https").authority(host).path("/${chapter.path}").build().toString())
+    }
+
+    fun whenReady(action: () -> Unit) {
+        if (initialized) action() else readyToShow = action
     }
 
     @android.annotation.SuppressLint("ClickableViewAccessibility")
@@ -93,20 +137,54 @@ internal class ReaderPage(
         return super.onTouchEvent(event)
     }
 
-    fun appearance(background: Long, ink: Long, font: String, zoom: Int) {
+    override fun performAccessibilityAction(action: Int, arguments: android.os.Bundle?): Boolean {
+        if (action == android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD ||
+            action == android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) {
+            touchScrolling = true
+            if (followAudio) onBrowse()
+        }
+        return super.performAccessibilityAction(action, arguments)
+    }
+
+    fun setFollowing(enabled: Boolean) {
+        followAudio = enabled
+        if (enabled) touchScrolling = false
+    }
+
+    fun turn(direction: Int) {
+        onBrowse()
+        touchScrolling = true
+        if (!canScrollVertically(direction)) onTurnAtEdge(direction)
+        else scrollBy(0, (height * 0.90f).toInt() * direction)
+    }
+
+    fun appearance(style: ReaderStyle) {
+        val background = style.paper.bg
+        val ink = style.paper.ink
+        val font = style.font.css
+        val mark = "#%06x".format(style.highlight and 0xFFFFFF)
+        val markInk = "#%06x".format(style.highlightInk and 0xFFFFFF)
+        paged = style.paged
+        val paint = if (style.underline)
+            "text-decoration: underline 0.14em $markInk !important; text-underline-offset: 0.13em;"
+        else "background: $mark !important; color: $markInk !important;"
         setBackgroundColor(background.toInt())
         val foreground = "#%06x".format(ink and 0xFFFFFF)
         val paper = "#%06x".format(background and 0xFFFFFF)
         val face = if (font.isEmpty()) "" else "body, body * { font-family: $font !important; }"
         css = """
             html, body { background: $paper !important; color: $foreground !important; }
-            body { padding: 12px 5vw !important; margin: 0 auto !important; max-width: 50rem; }
+            body { padding: 12px ${style.margin}px !important; margin: 0 auto !important; max-width: 44rem; }
+            body :is(p,li,blockquote), body { line-height: ${style.lineSpacing} !important; }
             body :is(p,span,div,section,h1,h2,h3,h4,li,blockquote) { color: inherit !important; }
             img { max-width: 100%; height: auto; }
-            .foliocue-current { background: #ffe072 !important; color: #172c3d !important; }
+            .foliocue-current {
+                $paint border-radius: 0.16em;
+                box-decoration-break: clone; -webkit-box-decoration-break: clone;
+            }
             $face
         """.trimIndent()
-        settings.textZoom = zoom
+        settings.textZoom = (style.size * resources.configuration.fontScale).toInt().coerceIn(50, 500)
         applyAppearance()
     }
 
@@ -127,7 +205,101 @@ internal class ReaderPage(
 
     override fun onScrollChanged(left: Int, top: Int, oldLeft: Int, oldTop: Int) {
         super.onScrollChanged(left, top, oldLeft, oldTop)
-        if (initialized) position(top)
+        if (initialized && touchScrolling) position(top)
+    }
+
+    private fun navigateToStart() {
+        if (fragment != null) {
+            jump(fragment)
+        } else if (startingCfi == null) {
+            scrollTo(0, previousScroll)
+        } else {
+            evaluateJavascript("""
+                (() => {
+                    const cfi = ${JSONObject.quote(startingCfi)};
+                    const parts = cfi.replace(/\[(?:\^.|[^\]])*\]/g, '').split(',');
+                    const steps = (parts[0] + (parts[1] || '')).match(/\/\d+(?::\d+)?/g) || [];
+                    let node = document.documentElement;
+                    let offset = 0;
+                    for (const part of steps) {
+                        const [rawStep, at] = part.slice(1).split(':');
+                        const step = Number(rawStep);
+                        offset = Number(at || 0);
+                        if (step % 2 === 0) node = node.children[step / 2 - 1];
+                        else {
+                            let seen = 0;
+                            let found = null;
+                            for (const child of node.childNodes) {
+                                if (child.nodeType === 1) seen++;
+                                if (child.nodeType !== 3 || seen !== (step - 1) / 2) continue;
+                                found = child;
+                                if (offset <= child.length) break;
+                                offset -= child.length;
+                            }
+                            node = found;
+                        }
+                        if (!node) return false;
+                    }
+                    if (node.nodeType === 3) {
+                        const range = document.createRange();
+                        range.setStart(node, Math.min(offset, node.length));
+                        range.collapse(true);
+                        window.scrollBy(0, range.getBoundingClientRect().top - 22);
+                    } else node.scrollIntoView();
+                    return true;
+                })()
+            """.trimIndent()) { found -> if (found != "true") scrollTo(0, previousScroll) }
+        }
+    }
+
+    fun capturePosition(anchor: String?, excerpt: ((String) -> Unit)? = null, result: (String?, Double) -> Unit) {
+        if (!initialized) { result(null, 0.0); return }
+        val marker = anchor?.let(JSONObject::quote) ?: "null"
+        evaluateJavascript("""
+            (() => {
+                const marker = document.getElementById($marker);
+                const content = document.body.getBoundingClientRect();
+                let range;
+                const left = Math.max(5, content.left + parseFloat(getComputedStyle(document.body).paddingLeft || '0') + 6);
+                for (let y = 20; !marker && !range && y < Math.min(innerHeight, 180); y += 9) {
+                    for (const x of [left, left + 40, left + 100, innerWidth / 2]) {
+                        const point = document.caretRangeFromPoint?.(Math.min(x, innerWidth-2), y);
+                        if (point?.startContainer.nodeType === 3 && point.startContainer.textContent.trim() &&
+                            Math.abs(point.getBoundingClientRect().top - y) < 36) {range = point; break;}
+                    }
+                }
+                let node = marker || range?.startContainer ||
+                    document.elementFromPoint(Math.max(5, content.left + 30), 25);
+                if (!node || !document.body.contains(node)) return null;
+                const el = node.nodeType === 3 ? node.parentElement : node;
+                const snippet = ${excerpt != null} ? (el.closest('p,li,h1,h2,h3,blockquote') || el).textContent
+                    .slice(0,300).trim().replace(/\s+/g,' ').slice(0,110) : '';
+                const steps = [];
+                while (node !== document.documentElement) {
+                    const parent = node.parentNode;
+                    if (!parent) return null;
+                    let elements = 0;
+                    let offset = range?.startOffset || 0;
+                    let text = 0;
+                    for (const sibling of parent.childNodes) {
+                        if (sibling === node) break;
+                        if (sibling.nodeType === 1) { elements++; text = 0; }
+                        if (sibling.nodeType === 3) text += sibling.length;
+                    }
+                    steps.unshift(node.nodeType === 3 ? '/' + (elements * 2 + 1) + ':' + (text + offset)
+                        : '/' + ((elements + 1) * 2));
+                    node = parent;
+                }
+                const limit = Math.max(1, document.documentElement.scrollHeight);
+                return {cfi: steps.join(''), fraction: (scrollY + 25) / limit, snippet};
+            })()
+        """.trimIndent()) { raw ->
+            val parsed = runCatching { JSONObject(raw) }.getOrNull()
+            if (parsed == null) { result(null, 0.0); return@evaluateJavascript }
+            excerpt?.invoke(parsed.optString("snippet"))
+            val cfi = parsed.optString("cfi").takeIf { it.startsWith("/") && it.length <= 1800 }
+            result(cfi, parsed.optDouble("fraction", 0.0).coerceIn(0.0, 1.0))
+        }
     }
 
     fun jump(id: String) {
@@ -136,118 +308,211 @@ internal class ReaderPage(
 
     fun highlight(id: String?) {
         currentMark = id
-        val target = id?.let(JSONObject::quote) ?: "null"
+        flushHighlight()
+    }
+
+    private fun flushHighlight() {
+        if (closed || !initialized || markInFlight || currentMark == submittedMark) return
+        submittedMark = currentMark
+        markInFlight = true
+        val target = submittedMark?.let(JSONObject::quote) ?: "null"
         evaluateJavascript("""
             (() => {
-                document.querySelector('.foliocue-current')?.classList.remove('foliocue-current');
-                const word = document.getElementById($target);
+                window.audilegeMark?.classList.remove('foliocue-current');
+                const id = $target;
+                const word = id === null ? null : document.getElementById(id);
+                window.audilegeMark = word;
                 if (!word) return;
-                word.classList.add('foliocue-current');
                 const box = word.getBoundingClientRect();
-                if (box.top < 48 || box.bottom > innerHeight - 48) {
-                    word.scrollIntoView({block: 'center', inline: 'nearest'});
+                word.classList.add('foliocue-current');
+                const margin = Math.min(60, innerHeight * 0.18);
+                if ($followAudio && (box.top < margin || box.bottom > innerHeight - margin)) {
+                    word.scrollIntoView({behavior: 'instant', block: 'center', inline: 'nearest'});
                 }
             })()
-        """.trimIndent(), null)
+        """.trimIndent()) {
+            markInFlight = false
+            flushHighlight()
+        }
+    }
+
+    fun dispose() {
+        closed = true
+        readyToShow = null
+        stopLoading()
+        destroy()
     }
 }
 
 internal class Narration(
-    chapterCues: List<Cue>,
+    private val context: Context,
+    private val cues: List<Cue>,
     startIndex: Int,
-    private val mark: (String?) -> Unit,
-    private val error: (String) -> Unit,
+    private val onMark: (String?) -> Unit,
+    private val onFailure: () -> Unit,
 ) {
-    private var player: MediaPlayer? = null
-    private val timeline = CueTimeline(chapterCues, startIndex)
+    private val timeline = CueTimeline(cues, startIndex)
+    private val clock = ChapterClock(cues)
     val index get() = timeline.index
-    private var handlingEnd = false
+    val audio get() = timeline.cue.audio
+    val fraction get() = index.toDouble() / cues.size
+    val anchor get() = timeline.cue.fragment
+    private var player: MediaPlayer? = null
+    private var prepared = false
     private var seeking = false
+    private var ended = false
+    private var startMs = timeline.cue.start
+    private var tempo = 1f
+    private var wantsPlayback = true
     var finished = false
         private set
-    private var lastMark: String? = null
-    val audio: String get() = timeline.cue.audio
+    private var highlighted: String? = null
 
-    fun attach(file: File, tempo: Float, playing: Boolean) {
-        releasePlayer()
+    fun progress(): TrackProgress {
+        val ms = if (prepared && !seeking) player?.currentPosition ?: startMs else startMs
+        return TrackProgress(clock.elapsed(index, ms), clock.duration)
+    }
+
+    suspend fun attach(file: File) = attach { current -> file.inputStream().use { current.setDataSource(it.fd) } }
+
+    suspend fun attach(stream: AudioStream) = attach { current ->
+        current.setDataSource(context, Uri.parse(stream.url.toString()), stream.headers)
+    }
+
+    private suspend fun attach(source: (MediaPlayer) -> Unit) {
+        closePlayer()
         val current = MediaPlayer()
         player = current
         try {
-            current.setAudioAttributes(AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-            file.inputStream().use { current.setDataSource(it.fd) }
-            current.setOnErrorListener { _, _, _ ->
-                error("Die eingebettete Tonspur konnte nicht abgespielt werden.")
+            current.setWakeMode(context, android.os.PowerManager.PARTIAL_WAKE_LOCK)
+            current.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            source(current)
+            current.setOnCompletionListener { if (it === player) ended = true }
+            current.setOnSeekCompleteListener {
+                if (it === player) {
+                    seeking = false
+                    if (wantsPlayback) resumePlayer()
+                }
+            }
+            suspendCancellableCoroutine<Unit> { ready ->
+                current.setOnPreparedListener { if (ready.isActive) ready.resume(Unit) }
+                current.setOnErrorListener { _, what, extra ->
+                    if (ready.isActive) ready.resumeWithException(IllegalStateException("Audio $what/$extra"))
+                    true
+                }
+                current.prepareAsync()
+            }
+            prepared = true
+            current.setOnErrorListener { failed, _, _ ->
+                if (failed === player) onFailure()
                 true
             }
-            current.setOnCompletionListener { handlingEnd = true }
-            current.setOnSeekCompleteListener { seeking = false }
-            current.prepare()
-            startAt(tempo, playing)
-        } catch (exception: Exception) {
-            releasePlayer()
-            throw exception
+            seekPlayer()
+        } catch (failure: Exception) {
+            if (current === player) closePlayer()
+            throw failure
         }
     }
 
-    private fun startAt(tempo: Float, playing: Boolean) {
+    fun setPlaying(playing: Boolean, speed: Float) {
+        wantsPlayback = playing
+        tempo = speed
         val current = player ?: return
-        val start = timeline.cue.start
-        seeking = current.currentPosition != start
-        if (seeking) current.seekTo(start.toLong(), MediaPlayer.SEEK_CLOSEST)
-        if (playing) {
-            current.playbackParams = PlaybackParams().allowDefaults().setSpeed(tempo)
-            current.start()
-        }
-        updateMarker(null)
+        if (!prepared) return
+        if (playing && !seeking) resumePlayer()
+        else if (!playing && current.isPlaying) current.pause()
     }
 
-    fun pause() { player?.takeIf { it.isPlaying }?.pause() }
-
-    fun play(tempo: Float) {
-        player?.let {
-            it.playbackParams = PlaybackParams().allowDefaults().setSpeed(tempo)
-            it.start()
+    private fun resumePlayer() {
+        val current = player ?: return
+        try {
+            if (!current.isPlaying || current.playbackParams.speed != tempo) {
+                current.playbackParams = PlaybackParams().allowDefaults().setSpeed(tempo)
+                current.start()
+            }
+        } catch (_: IllegalStateException) {
+            onFailure()
         }
     }
 
-    fun tick(tempo: Float): Boolean {
+    private fun seekPlayer() {
+        val current = player ?: return
+        ended = false
+        if (current.currentPosition == startMs && !seeking) {
+            if (wantsPlayback) resumePlayer()
+        } else {
+            if (current.isPlaying) current.pause()
+            seeking = true
+            current.seekTo(startMs.toLong(), MediaPlayer.SEEK_CLOSEST)
+        }
+    }
+
+    fun timeForAnchor(anchor: String): Int? {
+        val at = cues.indexOfFirst { it.fragment == anchor }
+        return if (at < 0) null else clock.elapsed(at, cues[at].start)
+    }
+
+    /** Returns true when the new chapter time needs another media source. */
+    fun seek(elapsedMs: Int): Boolean {
+        val point = clock.point(elapsedMs)
+        val oldAudio = audio
+        timeline.seek(point.index)
+        startMs = point.mediaMs
+        finished = false
+        mark(null)
+        if (audio != oldAudio) {
+            closePlayer()
+            return true
+        }
+        if (prepared) seekPlayer()
+        return false
+    }
+
+    fun tick(delayMs: Int): Boolean {
         val current = player ?: return false
-        if (seeking) return false
-        val ended = handlingEnd
-        handlingEnd = false
-        val position = current.timestamp?.anchorMediaTimeUs?.takeIf { it >= 0 }
-            ?.let { (it / 1000).coerceAtMost(Int.MAX_VALUE.toLong()).toInt() } ?: current.currentPosition
-        when (timeline.advance(position, ended)) {
+        if (!prepared || seeking) return false
+        // MediaPlayer's timestamp is an anchor in the past, while currentPosition follows its media clock.
+        val position = current.currentPosition
+        val completed = ended
+        ended = false
+        when (timeline.advance(position, completed)) {
             CueAdvance.FINISHED -> {
                 finished = true
-                updateMarker(null)
-                pause()
+                setPlaying(false, tempo)
+                mark(null)
             }
             CueAdvance.NEXT_TRACK -> {
-                updateMarker(null)
-                releasePlayer()
+                startMs = timeline.cue.start
+                mark(null)
+                closePlayer()
                 return true
             }
-            CueAdvance.SEEK -> startAt(tempo, true)
-            CueAdvance.CONTINUE -> updateMarker(timeline.fragmentAt(position))
+            CueAdvance.SEEK -> {
+                startMs = timeline.cue.start
+                mark(null)
+                seekPlayer()
+            }
+            CueAdvance.CONTINUE -> mark(timeline.fragmentAt(position, delayMs))
         }
         return false
     }
 
-    private fun updateMarker(fragment: String?) {
-        if (lastMark != fragment) {
-            lastMark = fragment
-            mark(fragment)
+    private fun mark(value: String?) {
+        if (highlighted != value) {
+            highlighted = value
+            onMark(value)
         }
     }
 
-    private fun releasePlayer() {
-        player?.release()
+    private fun closePlayer() {
+        val current = player
         player = null
-        handlingEnd = false
+        current?.release()
+        ended = false
+        prepared = false
         seeking = false
     }
 
-    fun close() { releasePlayer() }
+    fun close() = closePlayer()
 }

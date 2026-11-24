@@ -1,0 +1,14 @@
+<resources>
+    <string name="player_title">Hören</string>
+    <string name="player_modes">Modus</string>
+    <string name="audio_channel">Hörbuchwiedergabe</string>
+    <string name="audio_chapter">Kapitel %1$d</string>
+    <string name="audio_skip_back">%1$d Sekunden zurück</string>
+    <string name="audio_skip_forward">%1$d Sekunden vor</string>
+    <string name="audio_repeat">Passage wiederholen</string>
+    <string name="audio_open">Player öffnen</string>
+    <string name="audio_timer">Timer</string>
+    <string name="audio_chapter_end">Kapitelende</string>
+    <string name="audio_minutes">%1$d Min.</string>
+    <string name="audio_off">Aus</string>
+</resources>

@@ -1,0 +1,36 @@
+<resources>
+    <string name="shelf_home">Library</string>
+    <string name="shelf_mine">My books</string>
+    <string name="shelf_discover">Discover</string>
+    <string name="shelf_profile">Profile</string>
+    <string name="shelf_see_all">See all</string>
+    <string name="shelf_search">Search books</string>
+    <string name="shelf_filter">Title or author</string>
+    <string name="shelf_no_results">No matching books</string>
+    <string name="shelf_grid">Cover grid</string>
+    <string name="shelf_list">List view</string>
+    <string name="shelf_continue_read">Continue reading</string>
+    <string name="shelf_continue_follow">Continue reading along</string>
+    <string name="shelf_continue_listen">Continue listening</string>
+    <string name="shelf_start_read">Start reading</string>
+    <string name="shelf_start_follow">Start reading along</string>
+    <string name="shelf_start_listen">Start listening</string>
+    <string name="shelf_read">Read</string>
+    <string name="shelf_follow">Read along</string>
+    <string name="shelf_listen">Listen</string>
+    <string name="shelf_section">Section %1$d of %2$d</string>
+    <string name="shelf_chapter">Chapter %1$d</string>
+    <string name="shelf_series">Series · %1$s</string>
+    <string name="shelf_narrator">Narrated by %1$s</string>
+    <string name="shelf_pages">%1$d pages</string>
+    <string name="shelf_connect">Connect a server</string>
+    <string name="shelf_empty_downloads">Offline copies appear here. Open a book and choose “Save offline”.</string>
+    <string name="shelf_local_import">Import an EPUB</string>
+    <string name="shelf_by_title">Title</string>
+    <string name="shelf_by_author">Author</string>
+    <string name="shelf_empty">Connect a server or import an EPUB to start your library.</string>
+    <string name="shelf_offline_size">Offline · %1$s</string>
+    <string name="shelf_more_hits">Search more pages</string>
+    <string name="shelf_audio">Narrated EPUB</string>
+    <string name="shelf_plain">EPUB</string>
+</resources>

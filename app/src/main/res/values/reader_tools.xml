@@ -1,0 +1,20 @@
+<resources>
+    <string name="reader_search">Search in book</string>
+    <string name="reader_search_query">Search text</string>
+    <string name="reader_no_hits">No passages found.</string>
+    <string name="reader_search_failed">Chapters unavailable: %1$d</string>
+    <string name="reader_search_limit">First 100 results</string>
+    <string name="reader_bookmarks">Bookmarks</string>
+    <string name="reader_add_mark">Bookmark this passage</string>
+    <string name="reader_remove_mark">Remove bookmark</string>
+    <string name="reader_no_marks">Your saved passages appear here.</string>
+    <string name="reader_last_place">Return to previous passage</string>
+    <string name="reader_passage">Passage actions</string>
+    <string name="reader_follow_again">Return to narration</string>
+    <string name="reader_hear_here">Listen from here</string>
+    <string name="reader_no_voice_here">No narrated passage here.</string>
+    <string name="reader_local_place">On this device · %1$s · %2$s</string>
+    <string name="reader_remote_place">On server · %1$s · %2$s</string>
+    <string name="reader_time_unknown">Time unknown</string>
+    <string name="reader_here">Current chapter</string>
+</resources>

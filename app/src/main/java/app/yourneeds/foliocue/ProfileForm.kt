@@ -50,10 +50,12 @@ internal fun ProfileForm(
     var accountLogin by rememberSaveable { mutableStateOf(original?.accountLogin ?: true) }
     var validated by rememberSaveable { mutableStateOf(false) }
     val username = user.text.trim()
-    val address = profileServerAddress(server.text, local)
-    val draft = remember(address, username, label.text, local, accountLogin) {
+    val showLocalOption = offersLocalHttp(server.text)
+    val allowLocalHttp = local && showLocalOption
+    val address = profileServerAddress(server.text, allowLocalHttp)
+    val draft = remember(address, username, label.text, allowLocalHttp, accountLogin) {
         Profile(label = label.text.trim().ifEmpty { username }, server = address, user = username,
-            localHttp = local, accountLogin = accountLogin)
+            localHttp = allowLocalHttp, accountLogin = accountLogin)
     }
     val catalog = remember(draft) { runCatching { draft.catalog }.getOrNull() }
     val sameAccount = original?.takeIf {
@@ -105,7 +107,7 @@ internal fun ProfileForm(
                     error = serverError, help = if (serverError) R.string.server_input_error else R.string.server_example,
                     next = { userFocus.requestFocus() },
                 )
-                Row(
+                if (showLocalOption) Row(
                     Modifier.fillMaxWidth().heightIn(min = 48.dp)
                         .toggleable(value = local, enabled = !busy, role = Role.Checkbox, onValueChange = { local = it }),
                     verticalAlignment = Alignment.CenterVertically,
@@ -158,7 +160,6 @@ internal fun ProfileForm(
                 }
                 TextButton(enabled = !busy, onClick = {
                     accountLogin = !accountLogin
-                    password = TextFieldValue()
                     showPassword = false
                     validated = false
                 }) {

@@ -1,0 +1,36 @@
+<resources>
+    <string name="shelf_home">Bibliothek</string>
+    <string name="shelf_mine">Meine Bücher</string>
+    <string name="shelf_discover">Entdecken</string>
+    <string name="shelf_profile">Profil</string>
+    <string name="shelf_see_all">Alle anzeigen</string>
+    <string name="shelf_search">Bücher suchen</string>
+    <string name="shelf_filter">Titel oder Autor</string>
+    <string name="shelf_no_results">Keine passenden Bücher</string>
+    <string name="shelf_grid">Coverregal</string>
+    <string name="shelf_list">Listenansicht</string>
+    <string name="shelf_continue_read">Weiterlesen</string>
+    <string name="shelf_continue_follow">Mitlesen fortsetzen</string>
+    <string name="shelf_continue_listen">Weiterhören</string>
+    <string name="shelf_start_read">Lesen starten</string>
+    <string name="shelf_start_follow">Mitlesen starten</string>
+    <string name="shelf_start_listen">Hören starten</string>
+    <string name="shelf_read">Lesen</string>
+    <string name="shelf_follow">Mitlesen</string>
+    <string name="shelf_listen">Hören</string>
+    <string name="shelf_section">Abschnitt %1$d von %2$d</string>
+    <string name="shelf_chapter">Kapitel %1$d</string>
+    <string name="shelf_series">Reihe · %1$s</string>
+    <string name="shelf_narrator">Gesprochen von %1$s</string>
+    <string name="shelf_pages">%1$d Seiten</string>
+    <string name="shelf_connect">Server verbinden</string>
+    <string name="shelf_empty_downloads">Hier findest du deine Offline-Kopien. Öffne ein Buch und wähle „Offline speichern“.</string>
+    <string name="shelf_local_import">EPUB importieren</string>
+    <string name="shelf_by_title">Titel</string>
+    <string name="shelf_by_author">Autor</string>
+    <string name="shelf_empty">Verbinde einen Server oder importiere ein EPUB für deine Bibliothek.</string>
+    <string name="shelf_offline_size">Offline · %1$s</string>
+    <string name="shelf_more_hits">Weitere Seiten durchsuchen</string>
+    <string name="shelf_audio">EPUB mit Hörfassung</string>
+    <string name="shelf_plain">EPUB</string>
+</resources>

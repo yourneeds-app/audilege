@@ -39,14 +39,19 @@ internal data class Profile(
     val catalog: URI get() = URI(if (accountLogin) "$api/books/query" else "$api/opds")
 }
 
-private fun localHost(host: String): Boolean {
-    val bytes = host.split('.').mapNotNull { it.toIntOrNull()?.takeIf { value -> value in 0..255 } }
-    return host.endsWith(".local", ignoreCase = true) || (bytes.size == 4 &&
-        (bytes[0] == 10 || bytes[0] == 127 || bytes.take(2) == listOf(192, 168) ||
-            (bytes[0] == 172 && bytes[1] in 16..31)))
+internal fun localHost(host: String): Boolean {
+    if (host.endsWith(".local", ignoreCase = true) || host.equals("localhost", ignoreCase = true)) return true
+    val parts = host.split('.')
+    if (parts.size != 4) return false
+    val bytes = parts.map { part -> part.toIntOrNull()?.takeIf { it in 0..255 } ?: return false }
+    return bytes[0] == 10 || bytes[0] == 127 || bytes.take(2) == listOf(192, 168) ||
+        (bytes[0] == 172 && bytes[1] in 16..31)
 }
 
-internal data class CatalogEntry(val title: String, val url: URI, val book: Boolean)
+internal data class CatalogEntry(
+    val title: String, val url: URI, val book: Boolean, val author: String = "",
+    val coverUrl: URI? = null, val editionFileId: Long? = null,
+)
 internal data class CatalogPage(val entries: List<CatalogEntry>, val next: URI?)
 internal class CatalogAccessException(val messageId: Int) : IllegalStateException()
 internal interface LibraryCatalog {
@@ -86,13 +91,21 @@ internal class Catalog(private val profile: Profile, password: String) : Library
         require(feed.localName == "feed") { "Der Server hat keinen OPDS-Katalog geliefert." }
         val entries = feed.children("entry").flatMap { entry ->
             val title = entry.children("title").firstOrNull()?.textContent?.trim().orEmpty()
-            entry.children("link").mapNotNull { link ->
+            val authors = entry.children("author").mapNotNull { it.children("name").firstOrNull()?.textContent?.trim() }
+                .filter(String::isNotBlank).joinToString(", ")
+            val links = entry.children("link")
+            val images = listOf("http://opds-spec.org/image/thumbnail", "http://opds-spec.org/image")
+            val cover = images.firstNotNullOfOrNull { relation ->
+                links.firstOrNull { it.getAttribute("rel") == relation }?.getAttribute("href")
+                    ?.takeIf(String::isNotBlank)?.let { runCatching { url.resolve(it) }.getOrNull() }
+            }
+            links.mapNotNull { link ->
                 val rel = link.getAttribute("rel")
                 val type = link.getAttribute("type")
                 val book = rel.startsWith("http://opds-spec.org/acquisition") && type.substringBefore(';') == "application/epub+zip"
                 val section = type.startsWith("application/atom+xml") && rel !in listOf("self", "related")
                 if ((!book && !section) || title.isBlank()) return@mapNotNull null
-                CatalogEntry(title, url.resolve(link.getAttribute("href")), book)
+                CatalogEntry(title, url.resolve(link.getAttribute("href")), book, authors, cover)
             }.distinct()
         }
         val next = feed.children("link").firstOrNull { it.getAttribute("rel") == "next" }
@@ -102,6 +115,21 @@ internal class Catalog(private val profile: Profile, password: String) : Library
 
     override fun download(url: URI, destination: File) = get(url) { stream ->
         savePublication(stream, destination)
+    }
+
+    fun cover(url: URI): InputStream {
+        val connection = request(url)
+        try {
+            check(connection.responseCode == 200)
+            return object : java.io.FilterInputStream(connection.inputStream) {
+                override fun close() {
+                    try { super.close() } finally { connection.disconnect() }
+                }
+            }
+        } catch (failure: Exception) {
+            connection.disconnect()
+            throw failure
+        }
     }
 }
 
@@ -147,8 +175,19 @@ internal class Profiles(context: Context) {
         return Base64.encodeToString(cipher.iv + cipher.doFinal(credential.toByteArray()), Base64.NO_WRAP)
     }
 
-    fun credential(profile: Profile): String {
-        val value = Base64.decode(prefs.getString(profile.id, null) ?: error("Der Zugang fehlt."), Base64.NO_WRAP)
+    fun updateToken(): String = prefs.getString("github-release-token", null)?.let(::decrypt).orEmpty()
+
+    fun saveUpdateToken(token: String) {
+        val editor = prefs.edit()
+        if (token.isBlank()) editor.remove("github-release-token")
+        else editor.putString("github-release-token", encrypt(token))
+        check(editor.commit())
+    }
+
+    fun credential(profile: Profile): String = decrypt(prefs.getString(profile.id, null) ?: error("Der Zugang fehlt."))
+
+    private fun decrypt(encoded: String): String {
+        val value = Base64.decode(encoded, Base64.NO_WRAP)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
             init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, value.copyOfRange(0, 12)))
         }

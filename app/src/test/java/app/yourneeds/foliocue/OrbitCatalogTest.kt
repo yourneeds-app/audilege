@@ -67,6 +67,7 @@ class OrbitCatalogTest {
             val page = resumed.page(profile.catalog)
             assertEquals(listOf("Example EPUB"), page.entries.map { it.title })
             assertEquals(URI("${profile.api}/books/41"), page.entries.single().url)
+            assertEquals(8L, page.entries.single().editionFileId)
             assertEquals("page=1", page.next?.query)
             assertEquals("refresh-two", JSONObject(stored).getString("refreshToken"))
             assertEquals(listOf("POST auth/login native reader", "books/query Bearer initial 0",

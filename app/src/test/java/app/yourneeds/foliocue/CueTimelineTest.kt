@@ -5,6 +5,15 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class CueTimelineTest {
+    @Test fun sharedPhraseAndWordStartDoesNotMaskSubsequentWords() {
+        val timeline = CueTimeline(listOf(Cue("phrase", "a", 50, 950), Cue("first", "a", 50, 220),
+            Cue("second", "a", 220, 430), Cue("third", "a", 550, 900)), 0)
+        assertEquals(CueAdvance.CONTINUE,timeline.advance(50,false))
+        assertEquals("first",timeline.fragmentAt(50))
+        assertEquals(CueAdvance.CONTINUE,timeline.advance(260,false))
+        assertEquals("second",timeline.fragmentAt(260))
+        assertNull(timeline.fragmentAt(500))
+    }
     @Test fun sameTrackGapDoesNotSeekOrShowNextWordEarly() {
         val timeline = CueTimeline(listOf(
             Cue("one", "part.mp3", 10, 190),
@@ -20,6 +29,35 @@ class CueTimelineTest {
         assertEquals("two", timeline.fragmentAt(610))
         assertEquals(CueAdvance.CONTINUE, timeline.advance(650, false))
         assertEquals("three", timeline.fragmentAt(650))
+    }
+
+    @Test fun adjustsTheHighlightWithoutChangingThePlayingCueOrCrossingTracks() {
+        val timeline = CueTimeline(listOf(
+            Cue("one", "part.mp3", 0, 200),
+            Cue("two", "part.mp3", 200, 400),
+            Cue("three", "next.mp3", 0, 200),
+        ), 0)
+        assertEquals("two", timeline.fragmentAt(180, -30))
+        assertEquals(0, timeline.index)
+        assertEquals(CueAdvance.CONTINUE, timeline.advance(210, false))
+        assertEquals("one", timeline.fragmentAt(210, 30))
+        assertNull(timeline.fragmentAt(395, -30))
+        assertEquals(1, timeline.index)
+    }
+
+    @Test fun overlappingWordsSwitchAtTheNextOnsetWithoutSeeking() {
+        val timeline = CueTimeline(listOf(
+            Cue("first", "same.mp3", 100, 390),
+            Cue("second", "same.mp3", 250, 300),
+            Cue("third", "same.mp3", 360, 500),
+        ), 0)
+        assertEquals("first", timeline.fragmentAt(249))
+        assertEquals(CueAdvance.CONTINUE, timeline.advance(250, false))
+        assertEquals("second", timeline.fragmentAt(250))
+        assertEquals("first", timeline.fragmentAt(250, 25))
+        assertEquals(CueAdvance.CONTINUE, timeline.advance(330, false))
+        assertNull(timeline.fragmentAt(330))
+        assertEquals("third", timeline.fragmentAt(360))
     }
 
     @Test fun seeksOnBackwardsClipsAndSwitchesAtTheEndOfAnAudioPart() {

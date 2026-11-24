@@ -1,0 +1,37 @@
+<resources>
+    <string name="design_expanded">Ausgeklappt</string>
+    <string name="design_collapsed">Eingeklappt</string>
+    <string name="design_sample_intro">Der Hafen lag still in der Nacht.</string>
+    <string name="design_sample_active">Der Wind strich über den Kai.</string>
+    <string name="design_spacing">Zeilenabstand</string>
+    <string name="design_margins">Seitenränder</string>
+    <string name="design_navigation">Seiten bewegen</string>
+    <string name="design_scroll">Scrollen</string>
+    <string name="design_pages">Blättern</string>
+    <string name="design_mark">Textmarkierung</string>
+    <string name="design_fill">Text hinterlegen</string>
+    <string name="design_underline">Unterstreichen</string>
+    <string name="design_mark_color">Markierungsfarbe</string>
+    <string name="design_amber">Bernstein</string>
+    <string name="design_strength">Markierungsstärke</string>
+    <string name="design_soft">Dezent</string>
+    <string name="design_vivid">Kräftig</string>
+    <string name="design_profile_save">Mein Leseprofil speichern</string>
+    <string name="design_profile_saved">Leseprofil gespeichert</string>
+    <string name="design_profile_restore">Mein Leseprofil anwenden</string>
+    <string name="design_release_missing">Kein zugängliches Release gefunden. Öffne die Release-Seite oder richte den privaten Zugriff ein.</string>
+    <string name="design_release_limited">GitHub hat die Anfrage begrenzt. Versuche es später erneut oder öffne die Release-Seite.</string>
+    <string name="design_app_theme">App-Ansicht</string>
+    <string name="design_cover">Coverfarben in Buchdetails und Player verwenden</string>
+    <string name="design_reading">Leseansicht</string>
+    <string name="design_playback">Wiedergabe</string>
+    <string name="design_skip">Sprungweite</string>
+    <string name="design_10s">10 Sekunden</string>
+    <string name="design_15s">15 Sekunden</string>
+    <string name="design_30s">30 Sekunden</string>
+    <string name="design_60s">60 Sekunden</string>
+    <string name="design_never">Noch nie</string>
+    <string name="design_last_check">Letzte erfolgreiche Prüfung: %1$s</string>
+    <string name="design_auto_updates">Automatisch nach Updates suchen</string>
+    <string name="design_private_access">Privater Release-Zugang</string>
+</resources>

@@ -1,20 +1,21 @@
 # Audilege
 
-Eigenständiger Android-Client unter dem Label Your Needs, zuvor FolioCue. Die Android-Paket-ID bleibt für Updates erhalten. Die App verwendet Kotlin und Jetpack Compose. Der Reader wurde anhand der EPUB-Spezifikation entwickelt.
+Android-Reader für BookOrbit. EPUBs lesen, Hörbücher streamen und mit synchroner Textmarkierung mitlesen. Der Lesestand wird mit dem Server abgeglichen.
 
 ## Bedienung
 
-- Unter **Menü → Server & Profile → Profil hinzufügen** die BookOrbit-Adresse und den Benutzernamen und das Passwort des bestehenden BookOrbit-Kontos eingeben. Der Profilname ist optional. Die App speichert bei der BookOrbit-Anmeldung ausschließlich die Sitzungstokens verschlüsselt. Die Sitzung wird bei Bedarf erneuert. Vorhandene OPDS-Profile und die Option **Mit OPDS verbinden** stehen weiterhin zur Verfügung.
-- Das Hamburger-Menü öffnet Bibliothek, Downloads, EPUB-Import und Profile. Im geöffneten Buch führt es zum Inhaltsverzeichnis, zur Darstellung, in den Lesemodus ohne Leisten und zurück zur Bibliothek. **Weiterlesen** öffnet den letzten lokalen Titel des gewählten Profils an der gespeicherten Stelle.
-- Im Bücherregal einen Katalog öffnen und ein EPUB herunterladen oder über den Dateiauswahldialog ein fertiges Mitlesen-EPUB hinzufügen. Über **Bücherregal** oder Android-Zurück kann man direkt zum nächsten Buch wechseln. Bücher und Fortschritt sind dem jeweiligen Profil zugeordnet.
-- Im Reader stehen **Mitlesen**, **Nur hören** und **Nur lesen** für EPUBs mit Tonspur bereit. Die Modusleiste behält die aktuelle Passage. Ein Tipp auf den Text blendet die Bedienelemente ein und aus. **Inhalt** öffnet das Inhaltsverzeichnis, **Ansicht** die Einstellungen für Schrift, Schriftgröße, Papierfarbe und Tempo.
-- Die Oberfläche unterstützt Deutsch und Englisch. Die Sprache ist unter **Server & Profile** umschaltbar.
+- Unter **Profil → Profil hinzufügen** die BookOrbit-Adresse und die Zugangsdaten des bestehenden Kontos eingeben. Der Profilname ist optional. Audilege speichert die Sitzungstokens verschlüsselt und erneuert sie bei Bedarf. Vorhandene OPDS-Profile und **Mit OPDS verbinden** sind ebenfalls verfügbar.
+- Die Bibliothek zeigt das zuletzt geöffnete Buch mit einer Fortsetzen-Aktion. Coverregal und Liste lassen sich umschalten. Die Suche berücksichtigt Titel und Autoren. Auf breiten Fenstern stehen Regal und gewählte Buchdetails nebeneinander.
+- Für BookOrbit-Bücher starten **Lesen**, **Hören** und **Mitlesen** direkt vom Server, soweit das EPUB die jeweilige Funktion unterstützt. **Offline speichern** legt eine lokale Kopie an. Diese lässt sich unter **Downloads** öffnen oder entfernen.
+- Beim Lesen und Mitlesen blendet ein Tipp auf den Text die Bedienleisten ein. Unter **Aa** lassen sich Schrift, Schriftgröße, Zeilenabstand, Ränder, Papier und Mitlesemarkierung mit Vorschau einstellen. Buchsuche, Inhaltsverzeichnis und Lesezeichen helfen beim Springen zwischen Passagen.
+- Beim Hören stehen Kapitel, Zeitsprünge, Tempo und Schlaftimer zur Verfügung. Die Wiedergabe lässt sich über den Miniplayer, verbundene Kopfhörer und die Android-Mediensteuerung bedienen.
+- Das Hamburger-Menü öffnet die **Einstellungen**. Hier lassen sich unter anderem Sprache (Deutsch oder Englisch), App- und Akzentfarben, die Übernahme einer Coverfarbe sowie die automatische Updateprüfung wählen.
 
 ## Server und EPUB
 
-Die BookOrbit-Anmeldung verwendet `/api/v1/auth/login`, `/api/v1/books/query` und den berechtigungsgeschützten Datei-Download. Beim Öffnen bevorzugt Audilege ein EPUB mit eingebetteten Media Overlays. OPDS bleibt unter `/api/v1/opds` als alternativer Zugang nutzbar und liefert die Primärdatei. Ein fertiges `.readaloud.epub` lässt sich außerdem lokal importieren. HTTPS ist der Standard. Lokales HTTP wird pro Profil freigegeben.
+Die BookOrbit-Anmeldung verwendet die Konto-API. Den Reader versorgen die EPUB-Ressourcen- und Media-Overlay-Routen. Die Download-Route wird beim ausdrücklichen Speichern einer Offline-Kopie verwendet. Audilege bevorzugt ein EPUB mit Media Overlays. OPDS bleibt für Katalog und explizite Offline-Downloads verfügbar. HTTPS ist der Standard. Lokales HTTP wird pro Profil freigegeben.
 
-Unterstützt sind DRM-freie EPUBs mit XHTML-Text und EPUB-3-Media-Overlays mit eingebettetem Audio. Die Tonspur wird lokal im Vordergrund abgespielt. Kapitel, Scrollposition und letzte Tonposition werden lokal gespeichert. Der Abgleich erzeugt hervorgehobene Wörter ausschließlich dort, wo das Buch Wortzeitmarken enthält. Festlayout-EPUBs, externe Links, eingebettete Skripte, serverübergreifender Lesestandsabgleich und Hintergrundwiedergabe sind außerhalb des aktuellen Builds.
+Unterstützt sind DRM-freie EPUBs mit XHTML-Text und optionalen EPUB-3-Media-Overlays. Die Markierung folgt den Zeitmarken der jeweiligen Ausgabe. BookOrbit-Lesestände werden pro Konto und EPUB-Datei geladen und gespeichert. Ausstehende Änderungen werden lokal gemerkt. Bei konkurrierenden Änderungen bietet der Reader beide Lesestände zur Auswahl. Der Player unterstützt Hintergrundwiedergabe über einen Android-Mediendienst. Für Festlayout-EPUBs gibt es keinen eigenen Darstellungsmodus.
 
 ## AirPlay 2
 

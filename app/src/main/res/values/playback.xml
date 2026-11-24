@@ -1,0 +1,14 @@
+<resources>
+    <string name="player_title">Listen</string>
+    <string name="player_modes">Mode</string>
+    <string name="audio_channel">Audiobook playback</string>
+    <string name="audio_chapter">Chapter %1$d</string>
+    <string name="audio_skip_back">Back %1$d seconds</string>
+    <string name="audio_skip_forward">Forward %1$d seconds</string>
+    <string name="audio_repeat">Repeat passage</string>
+    <string name="audio_open">Open player</string>
+    <string name="audio_timer">Timer</string>
+    <string name="audio_chapter_end">End of chapter</string>
+    <string name="audio_minutes">%1$d min</string>
+    <string name="audio_off">Off</string>
+</resources>

@@ -21,4 +21,12 @@ class ProfileInputTest {
         assertFalse(validProfileUsername("reader\nname"))
         assertFalse(validProfileUsername(" "))
     }
+
+    @Test fun showsCleartextOptInOnlyForLocalAddressesThatCanUseIt() {
+        assertTrue(offersLocalHttp("192.168.1.20:8011"))
+        assertTrue(offersLocalHttp("http://shelf.local:8011"))
+        assertFalse(offersLocalHttp("https://shelf.local:8011"))
+        assertFalse(offersLocalHttp("books.example"))
+        assertFalse(offersLocalHttp("http://10.0.0.1.elsewhere"))
+    }
 }

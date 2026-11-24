@@ -8,11 +8,25 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private const val PAGE_SIZE = 60
-private class OrbitHttp(val status: Int) : Exception("BookOrbit HTTP $status")
+internal class OrbitHttp(val status: Int) : Exception("BookOrbit HTTP $status")
+
+internal data class OrbitBook(
+    val id: Long, val fileId: Long, val author: String, val description: String,
+    val series: String = "", val narrator: String = "", val pages: Int? = null,
+)
+internal interface ProgressEndpoint {
+    fun progress(): JSONObject
+    fun updateProgress(body: JSONObject): JSONObject
+}
+
+internal data class OnlineBook(val catalog: OrbitCatalog, val detail: OrbitBook) : ProgressEndpoint {
+    override fun progress() = catalog.progress(detail.fileId)
+    override fun updateProgress(body: JSONObject) = catalog.progress(detail.fileId, body)
+}
 
 internal class OrbitCatalog(
     private val profile: Profile,
-    private var session: String,
+    @Volatile private var session: String,
     private val persistSession: (String) -> Unit = {},
 ) : LibraryCatalog {
     private val api = profile.api
@@ -29,9 +43,10 @@ internal class OrbitCatalog(
             val id = book.optLong("id", 0)
             if (id <= 0) return@mapNotNull null
             val files = book.optJSONArray("files")
-            if (files != null && preferredEpubFile(files) == null) return@mapNotNull null
+            val edition = files?.let(::preferredEpubFile)
+            if (files != null && edition == null) return@mapNotNull null
             val title = book.optString("title").ifBlank { book.optJSONObject("metadata")?.optString("title").orEmpty() }
-            CatalogEntry(title.ifBlank { "#$id" }, URI("$api/books/$id"), true)
+            CatalogEntry(title.ifBlank { "#$id" }, URI("$api/books/$id"), true, author(book), editionFileId = edition)
         }
         val hasMore = items.length() > 0 && (index + 1L) * PAGE_SIZE < response.optLong("total", 0L)
         CatalogPage(entries, if (hasMore) URI("${profile.catalog}?page=${index + 1}") else null)
@@ -45,23 +60,80 @@ internal class OrbitCatalog(
         request(URI("$api/books/files/$fileId/download"), null, token) { savePublication(it, destination) }
     }
 
+    fun download(book: OrbitBook, destination: File): File = withSession { token ->
+        request(URI("$api/books/files/${book.fileId}/download"), null, token) { savePublication(it, destination) }
+    }
+
+    fun details(url: URI): OrbitBook = withSession { token ->
+        val id = url.path.substringAfterLast('/').toLong()
+        val book = json(URI("$api/books/$id"), null, token)
+        val fileId = preferredEpubFile(book.getJSONArray("files"))
+            ?: throw CatalogAccessException(R.string.no_epub)
+        val meta = book.optJSONObject("metadata") ?: book
+        val audioMeta = book.optJSONObject("audioMetadata") ?: meta.optJSONObject("audioMetadata")
+        OrbitBook(id, fileId, author(book), meta.text("description"), meta.text("seriesName"),
+            people(meta, "narrators").ifBlank { audioMeta?.let { people(it, "narrators") }.orEmpty() }
+                .ifBlank { meta.text("narrator") },
+            meta.optInt("pageCount").takeIf { it > 0 })
+    }
+
+    fun publication(book: OrbitBook, title: String): Publication = Publication(
+        title,
+        { path -> withSession { token -> openStream(epubResource(book, path, false), token) } },
+        { path ->
+            withSession { token ->
+                val uri = epubResource(book, path, true)
+                // The range probe refreshes the session before Android opens the data source.
+                openStream(uri, token, "bytes=0-0").close()
+                AudioStream(uri, mapOf("Authorization" to "Bearer $token", "android-allow-cross-domain-redirect" to "0"))
+            }
+        },
+    )
+
+    fun cover(id: Long): InputStream = withSession { token ->
+        openStream(URI("$api/books/$id/thumbnail"), token)
+    }
+
+    fun progress(fileId: Long, body: JSONObject? = null): JSONObject = withSession { token ->
+        request(URI("$api/books/files/$fileId/progress"), body, token) {
+            val response = it.bufferedReader(Charsets.UTF_8).readText().trim()
+            when {
+                response == "null" || (response.isEmpty() && body != null) -> JSONObject()
+                else -> JSONObject(response)
+            }
+        }
+    }
+
+    private fun epubResource(book: OrbitBook, path: String, audio: Boolean): URI {
+        val endpoint = if (audio) "media-overlay/file" else "file"
+        val escapedPath = if (audio) path else path.replace("%", "%25")
+        val encoded = URI(null, null, "/$escapedPath", null).rawPath.removePrefix("/")
+        return URI("$api/epub/${book.id}/$endpoint/$encoded?fileId=${book.fileId}")
+    }
+
     private fun <T> withSession(operation: (String) -> T): T {
-        var tokens = JSONObject(session)
+        val snapshot = session
         try {
             return try {
-                operation(tokens.getString("accessToken"))
+                operation(JSONObject(snapshot).getString("accessToken"))
             } catch (failure: OrbitHttp) {
                 if (failure.status != 401) throw failure
-                val payload = JSONObject().put("refreshToken", tokens.getString("refreshToken"))
-                tokens = json(URI("$api/auth/refresh"), payload)
-                val renewed = sessionCredential(tokens)
-                persistSession(renewed)
-                session = renewed
-                operation(tokens.getString("accessToken"))
+                operation(refreshAfter(snapshot))
             }
         } catch (failure: OrbitHttp) {
             throw catalogError(failure.status, R.string.session_expired)
         }
+    }
+
+    @Synchronized
+    private fun refreshAfter(snapshot: String): String {
+        if (session == snapshot) {
+            val payload = JSONObject().put("refreshToken", JSONObject(snapshot).getString("refreshToken"))
+            val renewed = sessionCredential(json(URI("$api/auth/refresh"), payload))
+            persistSession(renewed)
+            session = renewed
+        }
+        return JSONObject(session).getString("accessToken")
     }
 
     fun credential(): String = session
@@ -87,6 +159,45 @@ internal class OrbitCatalog(
             403 -> CatalogAccessException(if (authentication == R.string.account_auth_error) authentication else R.string.account_permission)
             429 -> CatalogAccessException(R.string.auth_rate_limit)
             else -> OrbitHttp(status)
+        }
+
+        private fun author(book: JSONObject): String {
+            val meta = book.optJSONObject("metadata") ?: book
+            return people(meta, "authors").ifBlank { meta.text("author") }
+        }
+
+        private fun JSONObject.text(field: String) = if (isNull(field)) "" else optString(field, "")
+
+        private fun people(meta: JSONObject, field: String): String {
+            val values = meta.optJSONArray(field) ?: return ""
+            return (0 until values.length()).map { index ->
+                when (val person = values.opt(index)) {
+                    is JSONObject -> person.text("name")
+                    is String -> person.trim()
+                    else -> ""
+                }
+            }.filter(String::isNotBlank).joinToString(", ")
+        }
+
+        private fun openStream(url: URI, token: String, range: String? = null): InputStream {
+            val connection = url.toURL().openConnection() as HttpURLConnection
+            connection.instanceFollowRedirects = false
+            connection.connectTimeout = 10000
+            connection.readTimeout = 30000
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            if (range != null) connection.setRequestProperty("Range", range)
+            try {
+                val status = connection.responseCode
+                if (status !in 200..299) throw OrbitHttp(status)
+                return object : java.io.FilterInputStream(connection.inputStream) {
+                    override fun close() {
+                        try { super.close() } finally { connection.disconnect() }
+                    }
+                }
+            } catch (failure: Exception) {
+                connection.disconnect()
+                throw failure
+            }
         }
 
         private fun json(url: URI, body: JSONObject?, token: String? = null): JSONObject =

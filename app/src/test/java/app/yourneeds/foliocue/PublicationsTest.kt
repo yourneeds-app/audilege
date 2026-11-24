@@ -76,5 +76,27 @@ class PublicationsTest {
         val cues = book.cues(book.spine.single())
         assertEquals(listOf("the", "book"), cues.map { it.fragment })
         assertEquals(listOf(40, 710), cues.map { it.end - it.start })
+
+        val requested = mutableListOf<String>()
+        val online = Publication("Fallback", { path ->
+            requested += path
+            entries[path]?.byteInputStream()
+        })
+        assertEquals(listOf("META-INF/container.xml", "OPS/book.opf", "OPS/nav.xhtml"), requested)
+        assertEquals(cues, online.cues(online.spine.single()))
+        assertEquals("OPS/smil/one.smil", requested.last())
+        assertEquals(null, requested.firstOrNull { it.endsWith(".mp3") || it.endsWith(".epub") })
+        assertEquals(cues, online.cues(online.spine.single()))
+        assertEquals(1, requested.count { it == "OPS/smil/one.smil" })
+
+        val payload = online.progressPayload(0, "/4/2/2/1:2", "the", 0.25, true)!!
+        assertEquals(0.0, payload.getDouble("positionSeconds"), 0.0001)
+        assertEquals(0.04, online.narrationSeconds(0, "book")!!, 0.0001)
+        assertEquals("epubcfi(/6/2!/4/2/2/1:2)", payload.getString("cfi"))
+        assertEquals("OPS/text/one.xhtml#the", payload.getString("mediaOverlayFragment"))
+        assertEquals(ReadingPlace(0, null, "the"), payload.place(online, Mode.Follow))
+        assertEquals(ReadingPlace(0, "/4/2/2/1:2", null), payload.place(online, Mode.Read))
+        payload.put("textUpdatedAt", "2026-11-24T09:05:00Z").put("narrationUpdatedAt", "2026-11-24T09:00:00Z")
+        assertEquals(ReadingPlace(0, "/4/2/2/1:2", null), payload.place(online, Mode.Follow))
     }
 }
