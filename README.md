@@ -1,40 +1,53 @@
 # Audilege
 
-Eigenständiger Android-Client unter dem Label Your Needs, zuvor FolioCue. Die Android-Paket-ID bleibt für Updates erhalten. Die App verwendet Kotlin und Jetpack Compose. Der Reader wurde anhand der EPUB-Spezifikation entwickelt.
+Audilege is an Android reader and audiobook player for [BookOrbit](https://bookorbit.app/). Stream books from your server, read along with synchronized text highlighting, and resume from the same passage on another device.
 
-## Bedienung
+[Download the latest Android release](https://github.com/yourneeds-app/audilege/releases/latest)
 
-- Unter **Menü → Server & Profile → Profil hinzufügen** die BookOrbit-Adresse und den Benutzernamen und das Passwort des bestehenden BookOrbit-Kontos eingeben. Der Profilname ist optional. Die App speichert bei der BookOrbit-Anmeldung ausschließlich die Sitzungstokens verschlüsselt. Die Sitzung wird bei Bedarf erneuert. Vorhandene OPDS-Profile und die Option **Mit OPDS verbinden** stehen weiterhin zur Verfügung.
-- Das Hamburger-Menü öffnet Bibliothek, Downloads, EPUB-Import und Profile. Im geöffneten Buch führt es zum Inhaltsverzeichnis, zur Darstellung, in den Lesemodus ohne Leisten und zurück zur Bibliothek. **Weiterlesen** öffnet den letzten lokalen Titel des gewählten Profils an der gespeicherten Stelle.
-- Das Bücherregal zeigt Cover und Buchinformationen. Bei BookOrbit öffnen Lesen, Mitlesen und Hören die Inhalte direkt vom Server. Offline speichern ist eine eigene Aktion. In Downloads lassen sich lokale Kopien öffnen oder entfernen.
-- Im Reader stehen **Mitlesen**, **Nur hören** und **Nur lesen** für EPUBs mit Tonspur bereit. Die Modusleiste behält die aktuelle Passage. Ein Tipp auf den Text blendet die Bedienelemente ein und aus. **Inhalt** öffnet das Inhaltsverzeichnis, **Ansicht** die Einstellungen für Schrift, Schriftgröße, Papierfarbe und Tempo.
-- Die Oberfläche unterstützt Deutsch und Englisch. Die Sprache ist unter **Server & Profile** umschaltbar.
+## Getting started
 
-## Server und EPUB
+- Add your BookOrbit server under **Profile → Add profile** and sign in with your existing account. Audilege stores session tokens in encrypted storage and refreshes them when needed. Existing OPDS profiles and **Connect via OPDS** are also supported.
+- Browse the library as a cover grid or a list, search by title or author, and resume the last book you opened. On tablets and other wide screens, the library and book details appear side by side.
+- Choose **Read**, **Listen**, or **Read along** on the book details screen. For compatible BookOrbit books, all three modes can start from the server. Use **Save offline** to keep a copy that can be opened or removed under **Downloads**.
+- Tap the page to show the controls. Under **Aa**, adjust the font, size, line spacing, margins, paper color, and read-along highlighting. Use the table of contents, search, and bookmarks to move between passages.
+- In **Listen**, use the chapter controls, time jumps, playback speed, and sleep timer. Audilege skips text-only sections during playback. The mini-player, connected headphones, and Android media controls can also control playback.
+- Open **Settings** from the menu to choose English or German, adjust the theme and accent color, enable cover-based colors, and manage update checks.
 
-Die BookOrbit-Anmeldung verwendet die Konto-API. Den Reader versorgen die EPUB-Ressourcen- und Media-Overlay-Routen. Die Download-Route wird beim ausdrücklichen Speichern einer Offline-Kopie verwendet. Audilege bevorzugt ein EPUB mit Media Overlays. OPDS bleibt für Katalog und explizite Offline-Downloads verfügbar. HTTPS ist der Standard. Lokales HTTP wird pro Profil freigegeben.
+## Updates
 
-Unterstützt sind DRM-freie EPUBs mit XHTML-Text und optionalen EPUB-3-Media-Overlays. Die App spielt im Vordergrund ab. BookOrbit-Lesestände werden je EPUB-Datei geladen und gespeichert. Bei einer zwischenzeitlichen Änderung auf dem Server lässt Audilege zwischen beiden Positionen wählen. Die Wortmarkierung folgt den Zeitmarken des EPUB. Festlayout-EPUBs, externe Links, eingebettete Skripte und Hintergrundwiedergabe sind außerhalb des aktuellen Builds.
+Starting with Audilege 0.4.2, choose **Settings → App updates → Download and install update**. Audilege downloads and checks the APK, then opens the Android installation confirmation. Android may ask for permission the first time you install an update through Audilege.
+
+If you are using Audilege 0.4.1 or earlier, download the latest APK from GitHub Releases and install it over your existing copy. The APK uses the same package ID and signing certificate.
+
+## BookOrbit and EPUB support
+
+Audilege signs in through the BookOrbit account API. It uses the server's EPUB resource and media-overlay endpoints for streaming and the download endpoint when you request an offline copy. If a book has several editions, Audilege prefers an EPUB with media overlays. OPDS supports catalog browsing and offline downloads. HTTPS is the default. You can enable local HTTP for individual profiles.
+
+Audilege supports DRM-free EPUBs with XHTML text and optional EPUB 3 media overlays. Highlighting follows the timing marks in each edition. Reading and listening positions sync per BookOrbit account and EPUB edition. Audilege stores pending changes locally and lets you choose which position to keep when devices report conflicting changes. Android provides background playback through the media service. Fixed-layout EPUBs use the standard reader view.
 
 ## AirPlay 2
 
-Die AirPlay-2-Integration ist vertagt. Sonora dokumentiert einen nativen Senderweg mit `airplay2-sender-cpp`. Für FolioCue sind insbesondere die Lizenzhinweise der Abhängigkeiten und die Synchronisierung der Wortmarkierung mit der hörbaren Position am Lautsprecher zu prüfen. Der aktuelle Build spielt lokal ab.
+In **Listen**, tap the audio output icon and select a compatible AirPlay 2 receiver on the same Wi-Fi network. Audilege plays audio from BookOrbit or an offline copy and sends it to the receiver.
 
-## Bauen und prüfen
+On Android 11 and later, available receivers also appear in the Audilege media card's output picker. The card can switch devices and adjust volume during a listening session. Availability on the lock screen and in Quick Settings depends on the Android device.
 
-Projektordner in Android Studio öffnen. JDK 17 oder 21, Android SDK 35 und Gradle 8.14 verwenden.
+Audilege estimates the current listening position from the stream and its buffering delay. When you switch from AirPlay to **Read** or **Read along**, Audilege pauses playback and opens the corresponding passage. A lost connection also pauses playback. A BookOrbit account profile is required to sync between devices. The audio output picker includes the sender's license notices.
 
-```text
+## Build and test
+
+Open the project in Android Studio with JDK 17 or 21, Android SDK 35, and Gradle 8.14.
+
+```sh
 gradle testDebugUnitTest assembleDebug lintDebug
 ```
 
-- OPDS: [BookOrbit-Dokumentation](https://bookorbit.app/opds/)
-- Medienüberlagerungen: [EPUB 3.3](https://www.w3.org/TR/epub-33/)
-- Audioauswahl: [Android Media Routing](https://developer.android.com/media/routing)
+- [BookOrbit OPDS documentation](https://bookorbit.app/opds/)
+- [EPUB 3.3 specification](https://www.w3.org/TR/epub-33/)
+- [Android media routing documentation](https://developer.android.com/media/routing)
+- [Build and release instructions](RELEASING.md)
 
+### Earlier releases
 
-Stand 17. November 2026: Debug-APK 0.1.0 gebaut und Signatur geprüft. Android-Lint meldet 0 Fehler und 19 Warnungen. Vier Parser-Tests liefen direkt mit JUnit, weil die Sandbox die Loopback-Verbindung des Gradle-Testprozesses sperrt. Der Parser liest 58.199 Zeitmarken aus Krummer Hund und 306.375 aus der Panem-Gesamtausgabe. Wiedergabe und Oberfläche auf einem Android-Gerät sowie Anmeldung und Download an einem realen OPDS-Server stehen aus.
-
-Audilege 0.2.0 (Build 3): APK, acht Unit-Tests und Android-Lint geprüft. Die APK nutzt dieselbe Paket-ID und Signatur wie FolioCue 0.1.1. Der vollständige Test mit einem echten BookOrbit-Konto auf Android steht aus.
-
-Audilege 0.2.1 (Build 4): Zwischen vorwärts laufenden Zeitmarken derselben Tonspur läuft die Wiedergabe ohne Sprung weiter. Die Hervorhebung richtet sich nach der Android-Wiedergabezeit und bleibt in einer Lücke zwischen Wortmarken leer.
+- **0.2.1 (build 4)** keeps audio continuous between successive timing marks in the same track. Highlighting follows playback time and clears between word marks.
+- **0.2.0 (build 3)** passed the APK build, eight unit tests, and Android lint. It uses the same package ID and signing certificate as FolioCue 0.1.1.
+- **0.1.0** passed APK and signature verification. Android lint reported 19 warnings and zero errors. Four parser tests passed. The parser loaded 58,199 timing marks from *Krummer Hund* and 306,375 from the collected *Hunger Games* edition.
