@@ -135,4 +135,17 @@
     <string name="about_book">Über das Buch</string>
     <string name="chapter_previous">Vorheriges Kapitel</string>
     <string name="chapter_next">Nächstes Kapitel</string>
+    <string name="listening_statistics">Hörstatistik</string>
+    <string name="statistics_local_hint">Ab dieser Version auf diesem Gerät erfasst, getrennt nach Profil. Frühere Hörzeiten und andere Geräte sind nicht enthalten.</string>
+    <string name="statistics_total">Gesamte Hörzeit</string>
+    <string name="statistics_today">Heute</string>
+    <string name="statistics_week">Letzte 7 Tage</string>
+    <string name="statistics_streak">Aktueller Streak</string>
+    <string name="statistics_best_streak">Bester Streak</string>
+    <string name="statistics_streak_hint">Aufeinanderfolgende Tage mit mindestens einer Minute Hörzeit. Den Streak von gestern kannst du heute fortsetzen.</string>
+    <string name="statistics_books">Hörzeit je Buch</string>
+    <string name="statistics_empty">Starte ein Hörbuch, um hier deinen ersten Eintrag zu sehen.</string>
+    <string name="statistics_seconds">%1$d s</string>
+    <string name="statistics_minutes">%1$d m</string>
+    <string name="statistics_hours_minutes">%1$d h %2$d m</string>
 </resources>

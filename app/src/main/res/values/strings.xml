@@ -135,4 +135,17 @@
     <string name="about_book">About this book</string>
     <string name="chapter_previous">Previous chapter</string>
     <string name="chapter_next">Next chapter</string>
+    <string name="listening_statistics">Listening statistics</string>
+    <string name="statistics_local_hint">Recorded on this device, separately for each profile, from this version onward. Earlier listening and activity on other devices are not included.</string>
+    <string name="statistics_total">Total listening time</string>
+    <string name="statistics_today">Today</string>
+    <string name="statistics_week">Last 7 days</string>
+    <string name="statistics_streak">Current streak</string>
+    <string name="statistics_best_streak">Best streak</string>
+    <string name="statistics_streak_hint">Consecutive days with at least one minute of listening. You can continue yesterday’s streak today.</string>
+    <string name="statistics_books">Listening time by book</string>
+    <string name="statistics_empty">Start listening to see your first entry here.</string>
+    <string name="statistics_seconds">%1$d s</string>
+    <string name="statistics_minutes">%1$d m</string>
+    <string name="statistics_hours_minutes">%1$d h %2$d m</string>
 </resources>

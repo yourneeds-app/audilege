@@ -81,6 +81,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
     LaunchedEffect(updates) { updates.check(automatic = true) }
     var accent by remember { mutableStateOf(Accent.entries.getOrElse(readerPrefs.getInt("accent", 0)) { Accent.Teal }) }
     var settings by rememberSaveable { mutableStateOf(false) }
+    var statistics by rememberSaveable { mutableStateOf(false) }
     var details by remember { mutableStateOf<BookDetail?>(null) }
     var storageRevision by remember { mutableIntStateOf(0) }
     val covers = remember { CoverStore() }
@@ -122,7 +123,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
         }
     }
     fun from(profile: Profile): LibraryCatalog = if (profile.accountLogin) {
-        OrbitCatalog(profile, store.credential(profile)) { store.renew(profile,it) }
+        OrbitCatalog(profile, store.credential(profile), readSession = { store.credential(profile) }) { store.renew(profile,it) }
     } else Catalog(profile, store.credential(profile))
     val catalog = remember(selected) { selected?.let { runCatching { from(it) }.getOrNull() } }
     SyncPendingEditions(readerPrefs, folder, catalog as? OrbitCatalog)
@@ -217,8 +218,9 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
         form = true
         problem = null
     }
-    BackHandler(enabled = !form && !busy && opened == null && (settings || details != null || tab != ShelfTab.Library || history.size > 1)) {
+    BackHandler(enabled = !form && !busy && opened == null && (statistics || settings || details != null || tab != ShelfTab.Library || history.size > 1)) {
         when {
+            statistics -> statistics = false
             settings -> settings = false
             details != null -> { details = null; problem = null }
             history.size > 1 && tab != ShelfTab.Downloads && tab != ShelfTab.Profile -> history = history.dropLast(1)
@@ -250,6 +252,10 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                 readerPrefs.edit().putInt("$bookKey.shelfChapterIndex",index).putString("$bookKey.shelfChapter",chapterTitle).apply()
                 opened = null
             } }
+            return@MaterialTheme
+        }
+        if (statistics) {
+            ListeningStatisticsScreen(context, selected) { statistics = false }
             return@MaterialTheme
         }
         if (settings) {
@@ -396,9 +402,12 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
             }
         }
         FolioDrawer(stringResource(R.string.app),listOf(
-            MenuItem(R.string.import_epub) { if (!busy) startImport() },
-            MenuItem(R.string.app_settings) { if (!busy) settings = true }
-        ),brand = true) { menu ->
+            MenuItem(R.string.shelf_profile, icon = R.drawable.shelf_profile) { if (!busy) navigate(ShelfTab.Profile) },
+            MenuItem(R.string.import_epub, icon = R.drawable.menu_upload) { if (!busy) startImport() },
+            MenuItem(R.string.listening_statistics, icon = R.drawable.menu_statistics) { if (!busy) statistics = true }
+        ), brand = true, profile = selected,
+            bottomItem = MenuItem(R.string.app_settings, icon = R.drawable.menu_settings) { if (!busy) settings = true }
+        ) { menu ->
             Surface(Modifier.fillMaxSize(),color = MaterialTheme.colorScheme.background) {
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val split = maxWidth >= 720.dp && tab != ShelfTab.Profile

@@ -72,11 +72,15 @@ internal object AudilegePlayback {
     private val prefs get() = context?.getSharedPreferences("reader", Context.MODE_PRIVATE)
     private var lastPersist = 0L
     private var lastCheckpointMs = -1
+    private val listeningMeter = ListeningMeter()
+    private var listeningStats: ListeningStats? = null
+    private var pendingListeningMs = 0L
     var service: PlaybackService? = null
     var startPending = false
 
     fun connect(book: OpenBook, context: Context, sync: ReadingSync?) {
         this.context = context.applicationContext
+        if (listeningStats == null) listeningStats = ListeningStats(context.applicationContext)
         if (activeBook != null && activeBook?.file != book.file) stop()
         this.sync = sync
         readerVisible = true
@@ -197,6 +201,7 @@ internal object AudilegePlayback {
     fun start(context: Context, book: OpenBook, index: Int, anchor: String?, resumeSaved: Boolean, bridge: ReadingSync?, cfi: String? = null) {
         if (index !in book.publication.spine.indices) return
         this.context = context.applicationContext
+        if (listeningStats == null) listeningStats = ListeningStats(context.applicationContext)
         if (activeBook != null && activeBook?.file != book.file) {
             val visible = readerVisible
             stop()
@@ -218,6 +223,8 @@ internal object AudilegePlayback {
     }
 
     private fun openChapter(index: Int, anchor: String?, resumeSaved: Boolean, cfi: String? = null, elapsedOverride: Int? = null) {
+        flushListeningStats()
+        listeningMeter.reset()
         val opened = activeBook ?: return
         val ctx = context ?: return
         job?.cancel()
@@ -296,6 +303,7 @@ internal object AudilegePlayback {
                     }
                     if (now - lastUI >= 250) {
                         progress = engine.progress()
+                        sampleListeningStats(now)
                         lastUI = now
                         service?.refresh()
                     }
@@ -378,6 +386,8 @@ internal object AudilegePlayback {
     }
 
     fun pause(releaseFocus: Boolean = true) {
+        sampleListeningStats(SystemClock.elapsedRealtime())
+        listeningMeter.reset()
         playing = false
         runCatching { narration?.setPlaying(false, speed) }
         runCatching { narration?.progress() }.getOrNull()?.let { progress = it }
@@ -405,6 +415,8 @@ internal object AudilegePlayback {
         val engine = narration ?: return
         if (failed || loading) return
         val opened = activeBook ?: return
+        sampleListeningStats(SystemClock.elapsedRealtime())
+        listeningMeter.reset()
         if (engine.seek(elapsedMs)) attach(opened, engine)
         marker = engine.anchor
         progress = engine.progress()
@@ -472,6 +484,7 @@ internal object AudilegePlayback {
     }
 
     fun checkpoint() {
+        flushListeningStats()
         val book = activeBook ?: return
         val engine = narration ?: return
         val key = keyOf(book.file.absolutePath)
@@ -508,6 +521,7 @@ internal object AudilegePlayback {
 
     fun stop() {
         checkpoint()
+        listeningMeter.reset()
         abandonFocus()
         job?.cancel()
         load?.cancel()
@@ -544,6 +558,17 @@ internal object AudilegePlayback {
         progress = null
         sleep(0)
         service?.stopSession()
+    }
+
+    private fun sampleListeningStats(now: Long) {
+        val position = runCatching { narration?.progress()?.elapsedMs }.getOrNull() ?: 0
+        pendingListeningMs += listeningMeter.sample(now, position, playing && !loading && !failed, speed)
+    }
+
+    private fun flushListeningStats() {
+        val book = activeBook ?: return
+        if (pendingListeningMs > 0) listeningStats?.record(book, pendingListeningMs)
+        pendingListeningMs = 0
     }
 
     private fun requestService(): Boolean {

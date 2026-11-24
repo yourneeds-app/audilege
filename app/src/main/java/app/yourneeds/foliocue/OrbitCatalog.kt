@@ -28,9 +28,13 @@ internal data class OnlineBook(val catalog: OrbitCatalog, val detail: OrbitBook)
 internal class OrbitCatalog(
     private val profile: Profile,
     @Volatile private var session: String,
+    private val readSession: (() -> String)? = null,
     private val persistSession: (String) -> Unit = {},
 ) : LibraryCatalog {
     private val api = profile.api
+    private val sessionLock = synchronized(sessionLocks) {
+        sessionLocks.getOrPut("$api:${profile.id}:${profile.user}") { Any() }
+    }
     @Volatile private var groupedProgress: Boolean? = null
 
     override fun page(url: URI): CatalogPage = withSession { token ->
@@ -143,7 +147,7 @@ internal class OrbitCatalog(
     }
 
     private fun <T> withSession(operation: (String) -> T): T {
-        val snapshot = session
+        val snapshot = synchronized(sessionLock) { currentSession() }
         try {
             return try {
                 operation(JSONObject(snapshot).getString("accessToken"))
@@ -156,20 +160,26 @@ internal class OrbitCatalog(
         }
     }
 
-    @Synchronized
-    private fun refreshAfter(snapshot: String): String {
+    private fun currentSession(): String {
+        readSession?.invoke()?.let { session = it }
+        return session
+    }
+
+    private fun refreshAfter(snapshot: String): String = synchronized(sessionLock) {
+        currentSession()
         if (session == snapshot) {
             val payload = JSONObject().put("refreshToken", JSONObject(snapshot).getString("refreshToken"))
             val renewed = sessionCredential(json(URI("$api/auth/refresh"), payload))
             persistSession(renewed)
             session = renewed
         }
-        return JSONObject(session).getString("accessToken")
+        JSONObject(session).getString("accessToken")
     }
 
     fun credential(): String = session
 
     companion object {
+        private val sessionLocks = mutableMapOf<String, Any>()
         fun signIn(profile: Profile, password: String): OrbitCatalog {
             val body = JSONObject().put("username", profile.user).put("password", password)
                 .put("clientKind", "native").put("deviceLabel", "Audilege")
