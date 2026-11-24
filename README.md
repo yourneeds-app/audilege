@@ -12,7 +12,7 @@ Audilege is an Android reader and audiobook player for [BookOrbit](https://booko
 - Tap the page to show the controls. Under **Aa**, adjust the font, size, line spacing, margins, paper color, and read-along highlighting. Use the table of contents, search, and bookmarks to move between passages.
 - In **Listen**, use the chapter controls, time jumps, playback speed, and sleep timer. Audilege skips text-only sections during playback. The mini-player, connected headphones, and Android media controls can also control playback.
 - Open **Settings** from the menu to choose English or German, adjust the theme and accent color, enable cover-based colors, and manage update checks.
-- The menu shows the selected profile, username and server. **Listening statistics** records listening time per book, daily totals and streaks on this device, separately for each profile. A streak day requires at least one minute of listening. Earlier activity and other devices are not included. Settings stays at the bottom of the menu.
+- The menu shows the selected profile, username and server. **Listening statistics** shows small book covers, time per book, daily totals and streaks, with bar charts for the last seven days or four weeks. Tap a bar for its listening time. Statistics are stored on this device, separately for each profile, and are not synced between devices. Existing statistics are retained when updating. A streak day requires at least one minute of listening. Earlier unrecorded activity and other devices are not included. Settings stays at the bottom of the menu.
 
 ## Updates
 

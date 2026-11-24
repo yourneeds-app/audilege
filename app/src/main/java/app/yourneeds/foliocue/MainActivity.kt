@@ -255,7 +255,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
             return@MaterialTheme
         }
         if (statistics) {
-            ListeningStatisticsScreen(context, selected) { statistics = false }
+            ListeningStatisticsScreen(context, selected, catalog as? OrbitCatalog) { statistics = false }
             return@MaterialTheme
         }
         if (settings) {

@@ -227,14 +227,17 @@ private fun AirPlayNotices(back: () -> Unit) {
     val filename = selected
     val returnToPrevious = { if (selected == null) back() else selected = null }
     AlertDialog(onDismissRequest = returnToPrevious,
-        title = { Text(filename?.removeSuffix(".txt") ?: stringResource(R.string.route_licenses)) },
+        title = { Text(filename?.let { licenseTitle(it)?.let { label -> stringResource(label) } ?: it.removeSuffix(".txt") }
+            ?: stringResource(R.string.route_licenses)) },
         text = {
             if (filename == null) {
                 val files = names
                 if (files == null) LinearProgressIndicator()
                 else if (files.isEmpty()) Text(stringResource(R.string.route_licenses_unavailable))
                 else LazyColumn { items(files) { name ->
-                    TextButton(onClick = { selected = name }) { Text(name.removeSuffix(".txt")) }
+                    TextButton(onClick = { selected = name }) {
+                        Text(licenseTitle(name)?.let { stringResource(it) } ?: name.removeSuffix(".txt"))
+                    }
                 } }
             } else key(filename) {
                 val paragraphs by produceState<List<String>?>(null, assets) {
@@ -252,4 +255,18 @@ private fun AirPlayNotices(back: () -> Unit) {
                 }
             }
         }, confirmButton = { TextButton(onClick = returnToPrevious) { Text(stringResource(R.string.back)) } })
+}
+
+private fun licenseTitle(name: String): Int? = when (name) {
+    "AirPlay-sender-license.txt" -> R.string.license_sender
+    "AirPlay-sender-notice.txt" -> R.string.license_sender_notices
+    "Audilege-AirPlay.txt" -> R.string.license_integration
+    "LLVM-notices.txt" -> R.string.license_llvm
+    "Mbed-TLS-license.txt" -> R.string.license_mbed
+    "PTP-license.txt" -> R.string.license_ptp
+    "PTP-source.txt" -> R.string.license_ptp_source
+    "Sonora-GPL-3.0.txt" -> R.string.license_gpl
+    "Third-party-notices.txt" -> R.string.license_other
+    "ed25519-license.txt" -> R.string.license_ed25519
+    else -> null
 }

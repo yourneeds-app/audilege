@@ -1,20 +1,30 @@
 package app.yourneeds.foliocue
 
 import android.content.Context
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 
 @Composable
-internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, close: () -> Unit) {
+internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, catalog: OrbitCatalog? = null, close: () -> Unit) {
     val store = remember { ListeningStats(context) }
+    val covers = remember { CoverStore() }
     var summary by remember(profile) { mutableStateOf(store.summary(profile?.id ?: "local")) }
     LaunchedEffect(profile) {
         while (true) { delay(5000); summary = store.summary(profile?.id ?: "local") }
@@ -29,6 +39,7 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, clos
                     Text(stringResource(R.string.statistics_local_hint), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                item { ListeningChart(summary.days) }
                 item {
                     Card(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -54,15 +65,74 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, clos
                 item { Text(stringResource(R.string.statistics_books), style = MaterialTheme.typography.titleLarge) }
                 if (summary.books.isEmpty()) item { Text(stringResource(R.string.statistics_empty)) }
                 items(summary.books, key = { it.key }) { book ->
+                    val sources = remember(book.key, profile, catalog) {
+                        statisticsCoverSources(context, profile?.id ?: "local", book.key, catalog)
+                    }
                     OutlinedCard(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        BookCover(book.title, covers, "statistics:${profile?.id}:${book.key}", sources,
+                            Modifier.width(48.dp).aspectRatio(.70f))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(book.title, fontWeight = FontWeight.SemiBold)
                             if (book.author.isNotBlank()) Text(book.author, style = MaterialTheme.typography.bodySmall)
                             Text(listeningTimeLabel(book.millis), color = MaterialTheme.colorScheme.primary)
                         }
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ListeningChart(days: List<ListeningDay>) {
+    var weekly by rememberSaveable { mutableStateOf(false) }
+    var selected by remember(weekly) { mutableIntStateOf(-1) }
+    val bars = remember(days, weekly) { listeningBars(days, weekly) }
+    val locale = LocalConfiguration.current.locales[0]
+    val shortDate = remember(locale) { DateTimeFormatter.ofPattern("d.M.", locale) }
+    val weekday = remember(locale) { DateTimeFormatter.ofPattern("EE", locale) }
+    val peak = bars.maxOfOrNull { it.millis } ?: 0
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.statistics_chart), style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = !weekly, onClick = { weekly = false }, label = { Text(stringResource(R.string.statistics_daily)) })
+                FilterChip(selected = weekly, onClick = { weekly = true }, label = { Text(stringResource(R.string.statistics_weekly)) })
+            }
+            Text(listeningTimeLabel(peak), style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                bars.forEachIndexed { index, bar ->
+                    val dateLabel = if (weekly) "${bar.start.format(shortDate)}–${bar.end.format(shortDate)}"
+                        else "${bar.start.format(weekday)} ${bar.start.format(shortDate)}"
+                    val duration = listeningTimeLabel(bar.millis)
+                    Column(Modifier.weight(1f).clickable { selected = index }
+                        .semantics { contentDescription = "$dateLabel: $duration" },
+                        horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(Modifier.fillMaxWidth().height(128.dp), contentAlignment = Alignment.BottomCenter) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            if (bar.millis > 0) Box(Modifier.fillMaxWidth(.55f)
+                                .height((128f * bar.millis / peak.coerceAtLeast(1)).dp.coerceAtLeast(2.dp))
+                                .background(if (selected == index) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                                    RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)))
+                        }
+                        Text(if (weekly) "${bar.start.format(shortDate)}\n${bar.end.format(shortDate)}"
+                            else "${bar.start.format(weekday)}\n${bar.start.dayOfMonth}",
+                            style = MaterialTheme.typography.labelSmall,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.padding(top = 6.dp))
+                    }
+                }
+            }
+            if (peak == 0L) Text(stringResource(R.string.statistics_chart_empty), style = MaterialTheme.typography.bodySmall)
+            else if (selected in bars.indices) {
+                val bar = bars[selected]
+                Text("${bar.start.format(shortDate)}${if (weekly) " – ${bar.end.format(shortDate)}" else ""}: ${listeningTimeLabel(bar.millis)}",
+                    style = MaterialTheme.typography.bodySmall)
+            } else Text(stringResource(R.string.statistics_chart_hint), style = MaterialTheme.typography.bodySmall)
         }
     }
 }

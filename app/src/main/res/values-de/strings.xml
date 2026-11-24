@@ -136,7 +136,7 @@
     <string name="chapter_previous">Vorheriges Kapitel</string>
     <string name="chapter_next">Nächstes Kapitel</string>
     <string name="listening_statistics">Hörstatistik</string>
-    <string name="statistics_local_hint">Ab dieser Version auf diesem Gerät erfasst, getrennt nach Profil. Frühere Hörzeiten und andere Geräte sind nicht enthalten.</string>
+    <string name="statistics_local_hint">Auf diesem Gerät erfasst, getrennt nach Profil. Hörstatistiken werden nicht zwischen Geräten synchronisiert. Enthalten ist nur die von Audilege erfasste Hörzeit.</string>
     <string name="statistics_total">Gesamte Hörzeit</string>
     <string name="statistics_today">Heute</string>
     <string name="statistics_week">Letzte 7 Tage</string>
@@ -148,4 +148,19 @@
     <string name="statistics_seconds">%1$d s</string>
     <string name="statistics_minutes">%1$d m</string>
     <string name="statistics_hours_minutes">%1$d h %2$d m</string>
+    <string name="statistics_chart">Deine Hörzeit</string>
+    <string name="statistics_daily">7 Tage</string>
+    <string name="statistics_weekly">4 Wochen</string>
+    <string name="statistics_chart_empty">Hier erscheint deine Hörzeit, sobald du hörst.</string>
+    <string name="statistics_chart_hint">Tippe auf eine Säule, um ihre Hörzeit zu sehen.</string>
+    <string name="license_sender">AirPlay-Sender · Apache 2.0</string>
+    <string name="license_sender_notices">AirPlay-Sender · Hinweise</string>
+    <string name="license_integration">Audilege · AirPlay-Anbindung</string>
+    <string name="license_llvm">LLVM · Hinweise</string>
+    <string name="license_mbed">Mbed TLS · Lizenz</string>
+    <string name="license_ptp">PTP-Uhr · Lizenz</string>
+    <string name="license_ptp_source">PTP-Uhr · Herkunft und Änderungen</string>
+    <string name="license_gpl">GPL-3.0-Lizenz</string>
+    <string name="license_other">Weitere Komponenten · Hinweise</string>
+    <string name="license_ed25519">Ed25519 · Lizenz</string>
 </resources>

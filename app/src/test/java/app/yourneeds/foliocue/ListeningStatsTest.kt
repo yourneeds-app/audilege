@@ -46,4 +46,25 @@ class ListeningStatsTest {
         data.getJSONObject("days").put(today.toString(), 60_000)
         assertEquals(2, listeningSummary(data, today).currentStreak)
     }
+
+    @Test fun chartFillsMissingDaysAndAggregatesExactlyFourSevenDayPeriods() {
+        val today = LocalDate.of(2026, 11, 24)
+        val data = JSONObject().put("days", JSONObject()
+            .put(today.toString(), 60_000).put(today.minusDays(6).toString(), 120_000)
+            .put(today.minusDays(7).toString(), 30_000).put(today.minusDays(27).toString(), 90_000)
+            .put(today.minusDays(28).toString(), 1000))
+        val summary = listeningSummary(data, today)
+        assertEquals(28, summary.days.size)
+        assertEquals(today.minusDays(27), summary.days.first().date)
+        assertEquals(today, summary.days.last().date)
+        val daily = listeningBars(summary.days, false)
+        assertEquals(7, daily.size)
+        assertEquals(summary.week, daily.sumOf { it.millis })
+        assertEquals(5, daily.count { it.millis == 0L })
+        val weekly = listeningBars(summary.days, true)
+        assertEquals(4, weekly.size)
+        assertEquals(300_000L, weekly.sumOf { it.millis })
+        assertEquals(today, weekly.last().end)
+        weekly.forEach { assertEquals(6L, java.time.temporal.ChronoUnit.DAYS.between(it.start, it.end)) }
+    }
 }

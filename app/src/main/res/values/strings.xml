@@ -136,7 +136,7 @@
     <string name="chapter_previous">Previous chapter</string>
     <string name="chapter_next">Next chapter</string>
     <string name="listening_statistics">Listening statistics</string>
-    <string name="statistics_local_hint">Recorded on this device, separately for each profile, from this version onward. Earlier listening and activity on other devices are not included.</string>
+    <string name="statistics_local_hint">Recorded on this device, separately for each profile. Listening statistics are not synced between devices. Only activity recorded by Audilege is included.</string>
     <string name="statistics_total">Total listening time</string>
     <string name="statistics_today">Today</string>
     <string name="statistics_week">Last 7 days</string>
@@ -148,4 +148,19 @@
     <string name="statistics_seconds">%1$d s</string>
     <string name="statistics_minutes">%1$d m</string>
     <string name="statistics_hours_minutes">%1$d h %2$d m</string>
+    <string name="statistics_chart">Your listening time</string>
+    <string name="statistics_daily">7 days</string>
+    <string name="statistics_weekly">4 weeks</string>
+    <string name="statistics_chart_empty">Listening time will appear here as you listen.</string>
+    <string name="statistics_chart_hint">Tap a bar to see its listening time.</string>
+    <string name="license_sender">AirPlay sender · Apache 2.0</string>
+    <string name="license_sender_notices">AirPlay sender · notices</string>
+    <string name="license_integration">Audilege · AirPlay integration</string>
+    <string name="license_llvm">LLVM · notices</string>
+    <string name="license_mbed">Mbed TLS · license</string>
+    <string name="license_ptp">PTP clock · license</string>
+    <string name="license_ptp_source">PTP clock · source and changes</string>
+    <string name="license_gpl">GPL-3.0 license</string>
+    <string name="license_other">Other components · notices</string>
+    <string name="license_ed25519">Ed25519 · license</string>
 </resources>

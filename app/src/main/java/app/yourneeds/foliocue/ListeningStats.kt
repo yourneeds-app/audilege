@@ -26,10 +26,17 @@ internal class ListeningMeter {
 }
 
 internal data class BookListening(val key: String, val title: String, val author: String, val millis: Long)
+internal data class ListeningDay(val date: LocalDate, val millis: Long)
+internal data class ListeningBar(val start: LocalDate, val end: LocalDate, val millis: Long)
 internal data class ListeningSummary(
     val total: Long, val today: Long, val week: Long, val currentStreak: Int, val bestStreak: Int,
-    val books: List<BookListening>,
+    val books: List<BookListening>, val days: List<ListeningDay> = emptyList(),
 )
+
+internal fun listeningBars(days: List<ListeningDay>, weekly: Boolean): List<ListeningBar> =
+    if (weekly) days.takeLast(28).chunked(7).map { week ->
+        ListeningBar(week.first().date, week.last().date, week.sumOf { it.millis })
+    } else days.takeLast(7).map { ListeningBar(it.date, it.date, it.millis) }
 
 internal fun listeningSummary(data: JSONObject, today: LocalDate): ListeningSummary {
     val days = data.optJSONObject("days") ?: JSONObject()
@@ -54,8 +61,9 @@ internal fun listeningSummary(data: JSONObject, today: LocalDate): ListeningSumm
     val books = records.keys().asSequence().mapNotNull { key -> records.optJSONObject(key)?.let {
         BookListening(key, it.optString("title"), it.optString("author"), it.optLong("millis").coerceAtLeast(0))
     } }.filter { it.millis > 0 }.sortedByDescending { it.millis }.toList()
+    val recentDays = (27 downTo 0).map { ago -> today.minusDays(ago.toLong()).let { ListeningDay(it, totals[it] ?: 0) } }
     return ListeningSummary(totals.values.sum(), totals[today] ?: 0,
-        totals.filter { (day, _) -> day >= today.minusDays(6) && day <= today }.values.sum(), current, best, books)
+        totals.filter { (day, _) -> day >= today.minusDays(6) && day <= today }.values.sum(), current, best, books, recentDays)
 }
 
 /** Split at local midnight so a session spanning two days can contribute to both. */
