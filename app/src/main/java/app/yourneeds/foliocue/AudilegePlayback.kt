@@ -403,6 +403,7 @@ internal object AudilegePlayback {
     fun resume() {
         val opened = activeBook ?: return
         if (playing) return
+        queueAdvance?.cancel()
         if (!requestFocus()) { failed = true; return }
         playing = true
         if (!requestService()) return
@@ -528,7 +529,7 @@ internal object AudilegePlayback {
     private fun stepChapter(direction: Int, completed: Boolean) {
         val book = activeBook?.publication ?: return
         if (!canChapterBy(direction)) {
-            if (completed) pause()
+            if (completed) continueQueue()
             return
         }
         if (!completed) rememberPosition()
@@ -548,7 +549,7 @@ internal object AudilegePlayback {
                 loading = false
                 retryStep = null
                 if (target != null) openChapter(target, null, false)
-                else if (completed) pause()
+                else if (completed) continueQueue()
                 else if (playing) narration?.setPlaying(true, speed)
                 service?.refresh(force = true)
             } catch (cancel: CancellationException) { throw cancel }
@@ -556,6 +557,44 @@ internal object AudilegePlayback {
                   retryStep = direction
                   chapterFailure()
               }
+        }
+    }
+
+    private var queueAdvance: Job? = null
+    var advancedFrom: File? by mutableStateOf(null)
+        private set
+
+    private fun continueQueue() {
+        val finished = activeBook
+        val online = finished?.online
+        val ctx = context
+        val storage = prefs
+        pause()
+        if (finished?.mode != Mode.Listen || online == null || !online.catalog.supportsSharedQueue || ctx == null || storage == null) return
+        queueAdvance?.cancel()
+        queueAdvance = scope.launch {
+            try {
+                val next = withContext(Dispatchers.IO) {
+                    val queued = online.catalog.queue("queue",online.detail.id,remove = true).firstOrNull() ?: return@withContext null
+                    val entry = online.catalog.companionEntry(queued.id) ?: return@withContext null
+                    val detail = online.catalog.details(entry.url)
+                    val connection = OnlineBook(online.catalog, detail)
+                    val file = File(finished.file.parentFile, keyOf("${entry.url}#${detail.fileId}") + ".epub")
+                    OpenBook(file,online.catalog.publication(detail,entry.title),Mode.Listen,connection,connection.progress())
+                } ?: return@launch
+                if (activeBook !== finished || playing || !listenMode) return@launch
+                val nextOnline = next.online ?: return@launch
+                val bridge = ReadingSync.open(nextOnline,next.serverProgress,storage,keyOf(next.file.absolutePath))
+                val progress = bridge.resume ?: next.serverProgress
+                val position = progress?.place(next.publication, Mode.Listen)
+                queueAdvance = null
+                start(ctx,next,position?.chapter ?: 0,position?.anchor,false,bridge,position?.cfi,
+                    progress?.optDouble("positionSeconds")?.takeIf(Double::isFinite))
+                advancedFrom = finished.file
+            } catch (cancel: CancellationException) { throw cancel }
+            catch (_: Exception) {
+                // A failed queue lookup leaves the completed item paused and the next item available.
+            }
         }
     }
 
@@ -607,6 +646,9 @@ internal object AudilegePlayback {
     }
 
     fun stop(savePosition: Boolean = true) {
+        queueAdvance?.cancel()
+        queueAdvance = null
+        advancedFrom = null
         sampleListeningStats(SystemClock.elapsedRealtime())
         if (savePosition) checkpoint(syncNow = true) else flushListeningStats()
         requestStatisticsSync(force = true)

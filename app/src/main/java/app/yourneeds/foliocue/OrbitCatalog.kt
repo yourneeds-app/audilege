@@ -37,6 +37,8 @@ internal class OrbitCatalog(
     private val sessionLock = synchronized(sessionLocks) {
         sessionLocks.getOrPut("$api:${profile.id}:${profile.user}") { Any() }
     }
+    @Volatile var supportsSharedQueue = false
+        private set
     @Volatile private var groupedProgress: Boolean? = null
     override val statisticsIdentity: String = keyOf("${profile.api}\n${profile.user}")
 
@@ -109,6 +111,7 @@ internal class OrbitCatalog(
             .put("collapseSeries", false).put("collapseLinked", false)
             .put("sort", JSONArray().put(JSONObject().put("field", "title").put("dir", "asc")))
         val response = json(profile.catalog, body, token)
+        supportsSharedQueue = response.optBoolean("sharedQueue")
         val items = response.getJSONArray("items")
         val entries = items.objects().mapNotNull { book ->
             val files = book.optJSONArray("files")
@@ -193,6 +196,8 @@ internal class OrbitCatalog(
         val title = book.optString("title").ifBlank { book.optJSONObject("metadata")?.optString("title").orEmpty() }
         return CatalogEntry(title.ifBlank { "#$id" }, URI("$api/books/$id"), true, author(book),
             editionFileId = edition, primaryFileId = primary, readingPercent = percent, category = book.optString("category"),
+            narrator = book.optJSONObject("metadata")?.optString("narrator").orEmpty(),
+            played = book.optBoolean("played"),
             series = book.optJSONObject("metadata")?.optString("series").orEmpty(),
             volume = book.optJSONObject("metadata")?.optString("volume").orEmpty(),
             companionId = book.optLong("companionId").takeIf { it > 0 },
@@ -222,6 +227,15 @@ internal class OrbitCatalog(
 
     fun download(book: OrbitBook, destination: File): File = withSession { token ->
         request(URI("$api/books/files/${book.fileId}/download"), null, token) { savePublication(it, destination) }
+    }
+
+    fun queue(action: String? = null, bookId: Long? = null, remove: Boolean = false): List<QueueTitle> = withSession { token ->
+        val body = action?.let { JSONObject().put("kind", it).put("book", requireNotNull(bookId)).put("remove", remove) }
+        val url = URI(api.toString().removeSuffix("/api/v1") + "/web/player")
+        json(url, body, token).getJSONArray("items").objects()
+            .filter { it.optString("kind") == "queue" }
+            .map { QueueTitle(it.getLong("book"), it.optString("title")) }
+            .toList()
     }
 
     fun companionEntry(id: Long): CatalogEntry? = withSession { token ->

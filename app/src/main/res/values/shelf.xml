@@ -54,4 +54,13 @@
     <string name="home_started">Also in progress</string>
     <string name="home_new">New on your shelf</string>
     <string name="home_podcasts">Your podcasts</string>
+    <string name="shelf_by_series">Series and volume</string>
+    <string name="shelf_all_status">Any status</string>
+    <string name="shelf_started">Started</string>
+    <string name="shelf_finished">Finished</string>
+    <string name="queue_title">Up next</string>
+    <string name="queue_add">Add to Up next</string>
+    <string name="queue_empty">The queue is empty.</string>
+    <string name="queue_first">Move to front</string>
+    <string name="queue_remove">Remove</string>
 </resources>

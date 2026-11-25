@@ -150,6 +150,10 @@ internal fun LibraryTile(item: ShelfItem, covers: CoverStore, list: Boolean, ena
                     modifier = item.seriesAction?.let { if (enabled) Modifier.clickable(role = Role.Button, onClick = it) else Modifier } ?: Modifier,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (item.narrator.isNotBlank()) Text(stringResource(R.string.shelf_narrator, item.narrator),
+                    modifier = item.narratorAction?.let { Modifier.clickable(enabled = enabled, role = Role.Button, onClick = it) } ?: Modifier,
+                    color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (item.caption.isNotBlank()) Text(item.caption, style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -170,7 +174,7 @@ internal fun LibraryTile(item: ShelfItem, covers: CoverStore, list: Boolean, ena
 internal fun DetailScreen(
     book: BookDetail, covers: CoverStore, prefs: SharedPreferences, busy: Boolean, problem: Int?, storageRevision: Int,
     close: () -> Unit, openCompanion: (CatalogEntry) -> Unit, browseAuthor: (String) -> Unit,
-    browseSeries: (String) -> Unit, open: (Mode, Boolean) -> Unit, download: () -> Unit, remove: () -> Unit,
+    browseSeries: (String) -> Unit, browseNarrator: (String) -> Unit, enqueue: (() -> Unit)?, open: (Mode, Boolean) -> Unit, download: () -> Unit, remove: () -> Unit,
 ) {
     val context = LocalContext.current
     val online = book.onlineBook
@@ -217,7 +221,11 @@ internal fun DetailScreen(
                                 Modifier.clickable(enabled = !busy, role = Role.Button) { browseSeries(series) },
                                 color = MaterialTheme.colorScheme.primary)
                             online?.detail?.pages?.takeIf { it > 0 }?.let { Text(stringResource(R.string.shelf_pages, it), style = MaterialTheme.typography.bodySmall) }
-                            online?.detail?.narrator?.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.shelf_narrator, it), style = MaterialTheme.typography.bodySmall) }
+                            book.entry.narrator.ifBlank { online?.detail?.narrator.orEmpty() }.takeIf(String::isNotBlank)?.let { narrator ->
+                                Text(stringResource(R.string.shelf_narrator, narrator),
+                                    Modifier.clickable(enabled = !busy, role = Role.Button) { browseNarrator(narrator) },
+                                    color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                            }
                             if (publication != null) Text(stringResource(if (podcast) R.string.shelf_podcasts else if (hasAudio) R.string.shelf_audio else R.string.shelf_plain), style = MaterialTheme.typography.labelMedium)
                         }
                     }
@@ -254,6 +262,9 @@ internal fun DetailScreen(
                             }
                         }
                     }
+                }
+                if (enqueue != null) TextButton(onClick = enqueue, enabled = !busy) {
+                    Text(stringResource(R.string.queue_add))
                 }
                 if (offline) {
                     Text(stringResource(R.string.shelf_offline_size, Formatter.formatFileSize(context, book.localFile.length())), style = MaterialTheme.typography.bodySmall)

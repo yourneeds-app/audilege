@@ -98,6 +98,11 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
     var shelfSort by rememberSaveable { mutableStateOf(display.getInt("shelf.order", 0)) }
     var category by rememberSaveable { mutableStateOf("") }
     var facetAuthor by rememberSaveable { mutableStateOf("") }
+    var queueOpen by rememberSaveable { mutableStateOf(false) }
+    var queueItems by remember { mutableStateOf<List<QueueTitle>>(emptyList()) }
+    var queueError by remember { mutableStateOf(false) }
+    var facetNarrator by rememberSaveable { mutableStateOf("") }
+    var shelfStatus by rememberSaveable { mutableStateOf(ShelfStatus.All) }
     var facetSeries by rememberSaveable { mutableStateOf("") }
     var libraryCategory by rememberSaveable { mutableStateOf("") }
     var podcastShow by rememberSaveable { mutableStateOf("") }
@@ -124,6 +129,13 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
     LaunchedEffect(playerRequest) {
         if (playerRequest > 0) AudilegePlayback.activeBook?.takeIf { it.file.parentFile == folder }?.let { opened = it }
     }
+    val previousQueueFile = AudilegePlayback.advancedFrom
+    LaunchedEffect(previousQueueFile) {
+        if (previousQueueFile != null && opened?.file == previousQueueFile && opened?.mode == Mode.Listen) {
+            opened = AudilegePlayback.activeBook
+            details = null
+        }
+    }
     fun perform(failure: Int, task: suspend () -> Unit) {
         if (busy) return
         busy = true
@@ -141,6 +153,15 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
     } else Catalog(profile, store.credential(profile))
     val catalog = remember(selected) { selected?.let { runCatching { from(it) }.getOrNull() } }
     val orbit = catalog as? OrbitCatalog
+    fun updateQueue(action: String? = null, id: Long? = null, remove: Boolean = false) {
+        queueOpen = true
+        queueError = false
+        perform(R.string.stream_error) {
+            try { queueItems = withContext(Dispatchers.IO) { requireNotNull(orbit).queue(action,id,remove) } }
+            catch (cancel: CancellationException) { throw cancel }
+            catch (_: Exception) { queueError = true }
+        }
+    }
     val streams = remember(orbit, folder) { orbit?.let {
         context.getSharedPreferences("reading-shelf.${folder.name}.${it.statisticsIdentity}", Context.MODE_PRIVATE)
     } }
@@ -206,17 +227,20 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
         podcastShow = ""
         facetAuthor = ""
         facetSeries = ""
+        facetNarrator = ""
         query = ""
         details = null
         problem = null
         tab = target
     }
-    fun browseFacet(author: String = "", series: String = "") {
+    fun browseFacet(author: String = "", series: String = "", narrator: String = "") {
         navigate(ShelfTab.Library)
         libraryCategory = ""
         if (history.size > 1) history = history.take(1)
         facetAuthor = author
         facetSeries = series
+        facetNarrator = narrator
+        shelfStatus = ShelfStatus.All
     }
     fun openPodcasts(show: String) {
         if (tab == ShelfTab.Library) libraryCategory = "podcast" else {
@@ -229,6 +253,9 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
         if (selected?.id != profile?.id) AudilegePlayback.stop()
         selected = profile
         libraryCategory = ""
+        shelfStatus = ShelfStatus.All
+        queueOpen = false
+        queueItems = emptyList()
         display.edit().putString("profile",profile?.id).apply()
         history = emptyList()
         navigate(ShelfTab.Home)
@@ -352,7 +379,8 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                 Formatter.formatFileSize(context,item.file.length())) else ""
             ShelfItem(item.file.absolutePath,item.publication.title,item.publication.author,
                 { item.publication.cover?.let(item.publication::open) }, { details = localDetail(item); problem = null },caption,
-                entry.category, entry.added ?: item.file.lastModified(), entry.showKey, entry.showTitle)
+                entry.category, entry.added ?: item.file.lastModified(), entry.showKey, entry.showTitle,
+                percent = readerPrefs.getFloat("${keyOf(item.file.absolutePath)}.shelfPercent", 0f).toDouble())
         }
         val remote = current?.page?.entries.orEmpty().map { entry ->
             ShelfItem(coverKey(entry),entry.title,entry.author,{ cover(entry) },{
@@ -368,7 +396,14 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                 showTitle = entry.showTitle.ifBlank { entry.author }, series = entry.series, volume = entry.volume,
                 bookId = if (entry.book) entry.url.path.substringAfterLast('/').toLongOrNull() else null, companionId = entry.companionId,
                 authorAction = entry.author.takeIf { entry.book && entry.category != "podcast" && it.isNotBlank() }?.let { name -> { browseFacet(author = name) } },
-                seriesAction = entry.series.takeIf(String::isNotBlank)?.let { name -> { browseFacet(series = name) } })
+                seriesAction = entry.series.takeIf(String::isNotBlank)?.let { name -> { browseFacet(series = name) } },
+                narrator = entry.narrator, played = entry.played,
+                percent = entry.editionFileId?.let { edition ->
+                    val key = keyOf(File(folder,keyOf("${entry.url}#$edition") + ".epub").absolutePath)
+                    if (readerPrefs.contains("$key.sync.pending") || entry.readingPercent == null)
+                        readerPrefs.getFloat("$key.shelfPercent",0f).toDouble() else entry.readingPercent
+                } ?: entry.readingPercent ?: 0.0,
+                narratorAction = entry.narrator.takeIf(String::isNotBlank)?.let { name -> { browseFacet(narrator = name) } })
         }
         val duplicateCopies = remember(current,library,catalog,storageRevision) {
             val remoteEntries = current?.page?.entries.orEmpty().filter { it.book }
@@ -410,6 +445,10 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                     openCompanion = { showDetails(it) },
                     browseAuthor = { browseFacet(author = it) },
                     browseSeries = { browseFacet(series = it) },
+                    browseNarrator = { browseFacet(narrator = it) },
+                    enqueue = d.entry.url.path.substringAfterLast('/').toLongOrNull()
+                        ?.takeIf { orbit?.supportsSharedQueue == true && d.entry.category in setOf("audio","audilege","podcast") }
+                        ?.let { id -> { updateQueue("queue",id) } },
                     open = { mode,offline -> openDetail(d,mode,offline) },
                     download = {
                         perform(R.string.book_error) {
@@ -439,6 +478,18 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                     })
             }
         }
+        if (queueOpen) QueueDialog(queueItems,busy,queueError,close={ queueOpen=false },
+            retry={ updateQueue() }, promote={ updateQueue("promote",it) }, remove={ updateQueue("queue",it,true) },
+            open={ id ->
+                queueOpen=false
+                scope.launch {
+                    try {
+                        val entry = withContext(Dispatchers.IO) { orbit?.companionEntry(id) } ?: return@launch
+                        showDetails(entry, Mode.Listen)
+                    } catch (cancel: CancellationException) { throw cancel }
+                    catch (_: Exception) { queueOpen=true;queueError=true }
+                }
+            })
         FolioDrawer(stringResource(R.string.app),listOfNotNull(
             MenuItem(R.string.shelf_start, selected = tab == ShelfTab.Home, icon = R.drawable.shelf_start) { navigate(ShelfTab.Home) },
             MenuItem(R.string.shelf_home, selected = tab == ShelfTab.Library, icon = R.drawable.shelf_book) { navigate(ShelfTab.Library) },
@@ -446,6 +497,8 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
             if (history.any { screen -> screen.page.entries.any { it.category == "podcast" } })
                 MenuItem(R.string.shelf_podcasts, selected = tab == ShelfTab.Discover && category == "podcast",
                     icon = R.drawable.shelf_headphones) { openPodcasts("") } else null,
+            if (orbit?.supportsSharedQueue == true)
+                MenuItem(R.string.queue_title, icon = R.drawable.shelf_list) { if (!busy) updateQueue() } else null,
             MenuItem(R.string.listening_statistics, icon = R.drawable.menu_statistics) { if (!busy) statistics = true }
         ), brand = true, profileItem = MenuItem(R.string.profile_and_server, selected = tab == ShelfTab.Profile,
                 icon = R.drawable.shelf_profile, supporting = selected?.label ?: stringResource(R.string.local)) {
@@ -531,7 +584,9 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                                             }
                                         },query = query,setQuery = { query = it },
                                         facetAuthor = facetAuthor, facetSeries = facetSeries,
-                                        clearFacet = { facetAuthor = ""; facetSeries = "" })
+                                        facetNarrator = facetNarrator,
+                                        clearFacet = { facetAuthor = ""; facetSeries = ""; facetNarrator = "" },
+                                        status = shelfStatus,setStatus = { shelfStatus = it })
                                 }
                             }
                             if (detail != null) {

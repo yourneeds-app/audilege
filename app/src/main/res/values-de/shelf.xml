@@ -54,4 +54,13 @@
     <string name="home_started">Auch angefangen</string>
     <string name="home_new">Neu im Regal</string>
     <string name="home_podcasts">Deine Podcasts</string>
+    <string name="shelf_by_series">Reihe und Band</string>
+    <string name="shelf_all_status">Jeder Status</string>
+    <string name="shelf_started">Angefangen</string>
+    <string name="shelf_finished">Abgeschlossen</string>
+    <string name="queue_title">Als Nächstes</string>
+    <string name="queue_add">Zu „Als Nächstes“ hinzufügen</string>
+    <string name="queue_empty">Die Warteschlange ist leer.</string>
+    <string name="queue_first">Nach vorn</string>
+    <string name="queue_remove">Entfernen</string>
 </resources>
