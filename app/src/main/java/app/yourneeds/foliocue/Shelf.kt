@@ -137,11 +137,12 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
             .distinctBy { it.showKey }.sortedBy { it.showTitle.lowercase() }
     }
     val home = tab == ShelfTab.Home && query.isBlank() && !search
-    val podcastView = tab == ShelfTab.Discover && category == "podcast"
+    val canFilter = tab == ShelfTab.Library || tab == ShelfTab.Discover
+    val podcastView = canFilter && category == "podcast"
     val show = shows.firstOrNull { showKey.isNotEmpty() && it.showKey == showKey }
     LaunchedEffect(tab, query, sort, category, showKey) { grid.scrollToItem(0) }
     val visible = remember(items, query, sort, category, tab, showKey, home) {
-        val filtered = items.filter { (tab != ShelfTab.Discover || category.isEmpty() || it.category == category) &&
+        val filtered = items.filter { (!canFilter || category.isEmpty() || it.category == category) &&
             (!podcastView || showKey.isEmpty() || it.showKey == showKey) &&
             (!home || it.category != "podcast") &&
             (it.title.contains(query, true) || it.author.contains(query, true) || it.showTitle.contains(query, true)) }
@@ -184,6 +185,16 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
             LazyVerticalGrid(columns, state = grid, contentPadding = PaddingValues(start = AudilegeLayout.pageInset, end = AudilegeLayout.pageInset, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 item(span = { GridItemSpan(maxLineSpan) }) { header() }
+                if (canFilter && (category.isNotEmpty() || items.any { it.category.isNotEmpty() })) item(span = { GridItemSpan(maxLineSpan) }) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for ((value, label) in listOf("" to R.string.shelf_all_media, "ebook" to R.string.shelf_ebooks,
+                            "audio" to R.string.shelf_audio_category, "audilege" to R.string.audilege_brand, "podcast" to R.string.shelf_podcasts)) {
+                            if (value.isEmpty() || value == category || items.any { it.category == value }) {
+                                FilterChip(category == value, { setCategory(value) }, { Text(stringResource(label)) })
+                            }
+                        }
+                    }
+                }
                 if (home && recent.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
                     ContinueReading(recent, covers, !busy)
                 }
@@ -228,19 +239,9 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                             stringResource(if (list) R.string.shelf_grid else R.string.shelf_list)) }
                     }
                 }
-                if (tab == ShelfTab.Discover) item(span = { GridItemSpan(maxLineSpan) }) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for ((value, label) in listOf("" to R.string.shelf_discover, "ebook" to R.string.shelf_ebooks,
-                            "audio" to R.string.shelf_audio_category, "audilege" to R.string.audilege_brand, "podcast" to R.string.shelf_podcasts)) {
-                            if (value.isEmpty() || items.any { it.category == value }) {
-                                FilterChip(category == value, { setCategory(value) }, { Text(stringResource(label)) })
-                            }
-                        }
-                    }
-                }
                 items(if (home) visible.take(3) else visible, key = { it.key }) { book -> LibraryTile(book, covers, list && !home, !busy, book.open) }
                 if (visible.isEmpty() && !busy && (!home || shows.isEmpty())) item(span = { GridItemSpan(maxLineSpan) }) {
-                    if (query.isNotBlank()) Text(stringResource(R.string.shelf_no_results)) else empty()
+                    if (query.isNotBlank() || (canFilter && category.isNotEmpty())) Text(stringResource(R.string.shelf_no_results)) else empty()
                 }
                 if (more != null && !home) item(span = { GridItemSpan(maxLineSpan) }) {
                     OutlinedButton(onClick = more, enabled = !busy) {

@@ -34,6 +34,7 @@
     <string name="shelf_audio">Narrated EPUB</string>
     <string name="shelf_plain">EPUB</string>
     <string name="shelf_categories">Categories</string>
+    <string name="shelf_all_media">All</string>
     <string name="shelf_ebooks">E-books</string>
     <string name="shelf_audio_category">Audiobooks</string>
     <string name="shelf_podcasts">Podcasts</string>

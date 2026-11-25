@@ -96,6 +96,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
     var tab by rememberSaveable { mutableStateOf(ShelfTab.Home) }
     var shelfSort by rememberSaveable { mutableStateOf(display.getInt("shelf.order", 0)) }
     var category by rememberSaveable { mutableStateOf("") }
+    var libraryCategory by rememberSaveable { mutableStateOf("") }
     var podcastShow by rememberSaveable { mutableStateOf("") }
     var podcastOrder by rememberSaveable { mutableStateOf(display.getInt("podcast.order", 0)) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -201,13 +202,16 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
         tab = target
     }
     fun openPodcasts(show: String) {
-        navigate(ShelfTab.Discover)
-        category = "podcast"
+        if (tab == ShelfTab.Library) libraryCategory = "podcast" else {
+            navigate(ShelfTab.Discover)
+            category = "podcast"
+        }
         podcastShow = show
     }
     fun select(profile: Profile?) {
         if (selected?.id != profile?.id) AudilegePlayback.stop()
         selected = profile
+        libraryCategory = ""
         display.edit().putString("profile",profile?.id).apply()
         history = emptyList()
         navigate(ShelfTab.Home)
@@ -339,6 +343,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                 else perform(R.string.catalog_error) {
                     val page = withContext(Dispatchers.IO) { requireNotNull(catalog).page(entry.url) }
                     query = ""
+                    libraryCategory = ""
                     if (tab == ShelfTab.Home) tab = ShelfTab.Library
                     history = history + CatalogScreen(entry.title,entry.url,page)
                 }
@@ -452,47 +457,57 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                                             }
                                         }
                                     }, problem = problem)
-                                else ShelfContent(tab,items,recent,covers,busy,
-                                    if (tab == ShelfTab.Discover && category == "podcast") podcastOrder else shelfSort, {
-                                        if (tab == ShelfTab.Discover && category == "podcast") {
-                                            podcastOrder = it; display.edit().putInt("podcast.order",it).apply()
-                                        } else { shelfSort = it; display.edit().putInt("shelf.order",it).apply() }
-                                    },
-                                    category, { category = it; podcastShow = "" }, list,
-                                    showKey = podcastShow, openPodcasts = ::openPodcasts,
-                                    setList = { list = it; display.edit().putBoolean("shelf.list",it).apply() },
-                                    openMenu = menu, importEpub = ::startImport, more = more,seeAll = { category = ""; navigate(ShelfTab.Library) },
-                                    header = {
-                                        Column {
-                                            updates.available?.let { release -> TextButton(onClick = { settings = true }) {
-                                                Text(stringResource(R.string.release_available,release.version))
-                                            } }
-                                            if (history.size > 1 && current != null) TextButton(onClick = { history = history.dropLast(1); query = "" },enabled = !busy) {
-                                                Text(stringResource(R.string.back)+" · "+current.title)
+                                else {
+                                    val selectedCategory = when (tab) {
+                                        ShelfTab.Library -> libraryCategory
+                                        ShelfTab.Discover -> category
+                                        else -> ""
+                                    }
+                                    ShelfContent(tab,items,recent,covers,busy,
+                                        if (selectedCategory == "podcast") podcastOrder else shelfSort, {
+                                            if (selectedCategory == "podcast") {
+                                                podcastOrder = it; display.edit().putInt("podcast.order",it).apply()
+                                            } else { shelfSort = it; display.edit().putInt("shelf.order",it).apply() }
+                                        },
+                                        selectedCategory, {
+                                            if (tab == ShelfTab.Library) libraryCategory = it else category = it
+                                            podcastShow = ""
+                                        }, list,
+                                        showKey = podcastShow, openPodcasts = ::openPodcasts,
+                                        setList = { list = it; display.edit().putBoolean("shelf.list",it).apply() },
+                                        openMenu = menu, importEpub = ::startImport, more = more,seeAll = { libraryCategory = ""; navigate(ShelfTab.Library) },
+                                        header = {
+                                            Column {
+                                                updates.available?.let { release -> TextButton(onClick = { settings = true }) {
+                                                    Text(stringResource(R.string.release_available,release.version))
+                                                } }
+                                                if (history.size > 1 && current != null) TextButton(onClick = { history = history.dropLast(1); query = "" },enabled = !busy) {
+                                                    Text(stringResource(R.string.back)+" · "+current.title)
+                                                }
+                                                if (busy || (catalogLoading && tab != ShelfTab.Downloads)) LinearProgressIndicator(Modifier.fillMaxWidth())
+                                                if (tab != ShelfTab.Downloads && detail == null) problem?.let { message ->
+                                                    Text(stringResource(message),color = MaterialTheme.colorScheme.error)
+                                                    TextButton(onClick = {
+                                                        if (message == R.string.session_expired) profileForm(selected)
+                                                        else { problem = null; history = emptyList(); reload++ }
+                                                    },enabled = !busy) { Text(stringResource(R.string.retry)) }
+                                                }
                                             }
-                                            if (busy || (catalogLoading && tab != ShelfTab.Downloads)) LinearProgressIndicator(Modifier.fillMaxWidth())
-                                            if (tab != ShelfTab.Downloads && detail == null) problem?.let { message ->
-                                                Text(stringResource(message),color = MaterialTheme.colorScheme.error)
-                                                TextButton(onClick = {
-                                                    if (message == R.string.session_expired) profileForm(selected)
-                                                    else { problem = null; history = emptyList(); reload++ }
-                                                },enabled = !busy) { Text(stringResource(R.string.retry)) }
+                                        },empty = {
+                                            if (!catalogLoading || tab == ShelfTab.Downloads) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                if (selected == null && tab == ShelfTab.Home && query.isBlank()) {
+                                                    AudilegeWordmark(Modifier.padding(vertical = 8.dp).widthIn(max = 218.dp).fillMaxWidth())
+                                                }
+                                                Text(stringResource(when { tab == ShelfTab.Downloads -> R.string.shelf_empty_downloads
+                                                    selected == null -> R.string.shelf_empty
+                                                    else -> R.string.empty }))
+                                                if (selected == null && tab != ShelfTab.Downloads) Button(onClick = { profileForm(null) }) {
+                                                    Text(stringResource(R.string.shelf_connect))
+                                                }
+                                                if (tab != ShelfTab.Library) OutlinedButton(onClick = { startImport() }) { Text(stringResource(R.string.shelf_local_import)) }
                                             }
-                                        }
-                                    },empty = {
-                                        if (!catalogLoading || tab == ShelfTab.Downloads) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                            if (selected == null && tab == ShelfTab.Home && query.isBlank()) {
-                                                AudilegeWordmark(Modifier.padding(vertical = 8.dp).widthIn(max = 218.dp).fillMaxWidth())
-                                            }
-                                            Text(stringResource(when { tab == ShelfTab.Downloads -> R.string.shelf_empty_downloads
-                                                selected == null -> R.string.shelf_empty
-                                                else -> R.string.empty }))
-                                            if (selected == null && tab != ShelfTab.Downloads) Button(onClick = { profileForm(null) }) {
-                                                Text(stringResource(R.string.shelf_connect))
-                                            }
-                                            if (tab != ShelfTab.Library) OutlinedButton(onClick = { startImport() }) { Text(stringResource(R.string.shelf_local_import)) }
-                                        }
-                                    },query = query,setQuery = { query = it })
+                                        },query = query,setQuery = { query = it })
+                                }
                             }
                             if (detail != null) {
                                 if (split) VerticalDivider()

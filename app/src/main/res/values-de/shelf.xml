@@ -34,6 +34,7 @@
     <string name="shelf_audio">EPUB mit Hörfassung</string>
     <string name="shelf_plain">EPUB</string>
     <string name="shelf_categories">Kategorien</string>
+    <string name="shelf_all_media">Alle</string>
     <string name="shelf_ebooks">E-Books</string>
     <string name="shelf_audio_category">Hörbücher</string>
     <string name="shelf_podcasts">Podcasts</string>
