@@ -94,6 +94,8 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
     var profiles by remember { mutableStateOf(store.list()) }
     var selected by remember { mutableStateOf(profiles.firstOrNull { it.id == display.getString("profile", null) }) }
     var tab by rememberSaveable { mutableStateOf(ShelfTab.Library) }
+    var shelfSort by rememberSaveable { mutableStateOf(display.getInt("shelf.order", 0)) }
+    var category by rememberSaveable { mutableStateOf("") }
     var query by rememberSaveable { mutableStateOf("") }
     var list by rememberSaveable { mutableStateOf(display.getBoolean("shelf.list", false)) }
     var form by remember { mutableStateOf(false) }
@@ -314,7 +316,8 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
             val caption = if (tab == ShelfTab.Downloads) stringResource(R.string.shelf_offline_size,
                 Formatter.formatFileSize(context,item.file.length())) else ""
             ShelfItem(item.file.absolutePath,item.publication.title,item.publication.author,
-                { item.publication.cover?.let(item.publication::open) }, { details = localDetail(item); problem = null },caption)
+                { item.publication.cover?.let(item.publication::open) }, { details = localDetail(item); problem = null },caption,
+                if (item.publication.spine.any { it.overlay.isNotBlank() }) "audilege" else "ebook", item.file.lastModified())
         }
         val remote = current?.page?.entries.orEmpty().map { entry ->
             ShelfItem(coverKey(entry),entry.title,entry.author,{ cover(entry) },{
@@ -324,7 +327,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                     query = ""
                     history = history + CatalogScreen(entry.title,entry.url,page)
                 }
-            })
+            }, category = entry.category, added = entry.added)
         }
         val duplicateCopies = remember(current,library,catalog,storageRevision) {
             val remoteEntries = current?.page?.entries.orEmpty().filter { it.book }
@@ -354,7 +357,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
             }
         }) else null
         LaunchedEffect(query, next, busy, problem, current?.url) {
-            if (query.isNotBlank() && !busy && problem == null && more != null) {
+            if (!busy && problem == null && more != null) {
                 kotlinx.coroutines.delay(350)
                 more()
             }
@@ -392,13 +395,14 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
             }
         }
         FolioDrawer(stringResource(R.string.app),listOf(
-            MenuItem(R.string.profile_and_server, selected = tab == ShelfTab.Profile,
+            MenuItem(R.string.shelf_home, selected = tab == ShelfTab.Library, icon = R.drawable.shelf_book) { navigate(ShelfTab.Library) },
+            MenuItem(R.string.shelf_categories, selected = tab == ShelfTab.Discover, icon = R.drawable.shelf_grid) { category = ""; navigate(ShelfTab.Discover) },
+            MenuItem(R.string.import_epub, icon = R.drawable.menu_upload) { if (!busy) startImport() },
+            MenuItem(R.string.listening_statistics, icon = R.drawable.menu_statistics) { if (!busy) statistics = true }
+        ), brand = true, profileItem = MenuItem(R.string.profile_and_server, selected = tab == ShelfTab.Profile,
                 icon = R.drawable.shelf_profile, supporting = selected?.label ?: stringResource(R.string.local)) {
                 if (!busy) navigate(ShelfTab.Profile)
             },
-            MenuItem(R.string.import_epub, icon = R.drawable.menu_upload) { if (!busy) startImport() },
-            MenuItem(R.string.listening_statistics, icon = R.drawable.menu_statistics) { if (!busy) statistics = true }
-        ), brand = true,
             bottomItem = MenuItem(R.string.app_settings, icon = R.drawable.menu_settings) { if (!busy) settings = true }
         ) { menu ->
             Surface(Modifier.fillMaxSize(),color = MaterialTheme.colorScheme.background) {
@@ -413,7 +417,9 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                             if (detail == null || split) Box(Modifier.weight(if (split && detail != null) .48f else 1f)) {
                                 if (tab == ShelfTab.Profile) ProfilesScreen(profiles, selected, busy,
                                     openMenu = menu, select = ::select, edit = ::profileForm)
-                                else ShelfContent(tab,items,recent,covers,busy,list,
+                                else ShelfContent(tab,items,recent,covers,busy,
+                                    shelfSort, { shelfSort = it; display.edit().putInt("shelf.order",it).apply() },
+                                    category, { category = it }, list,
                                     setList = { list = it; display.edit().putBoolean("shelf.list",it).apply() },
                                     openMenu = menu,more = more,seeAll = { navigate(ShelfTab.Discover) },
                                     header = {

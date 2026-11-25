@@ -446,6 +446,18 @@ internal fun BookReader(
             location = Location(playback.chapter, playback.anchor, location.revision + 1)
         }
     }
+    LaunchedEffect(view, mode, displayed.index) {
+        val page = view ?: return@LaunchedEffect
+        val item = book.spine[displayed.index]
+        if (mode == Mode.Follow && page.chapterPath == item.path) {
+            val encoded = withContext(Dispatchers.IO) {
+                try { org.json.JSONArray(book.cues(item).mapNotNull { it.fragment }).toString() }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { null }
+            }
+            if (encoded != null) page.timedWords(encoded)
+        }
+    }
     LaunchedEffect(view, mode, attached, displayed.index, location.index, sentenceMark) {
         snapshotFlow { playback.marker }.collect { fragment ->
             if (attached && mode == Mode.Follow && displayed.index == location.index) view?.highlight(fragment, sentenceMark)

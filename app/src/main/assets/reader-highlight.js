@@ -2,6 +2,23 @@
     const boundaries = new WeakMap();
     const key = 'audilege-sentence';
     let previous = null;
+    let companions = new Map(), activeCompanions = [];
+    window.audilegeTimedWords = ids => {
+        const timed = new Set(ids);
+        companions = new Map();
+        for (const sentence of document.querySelectorAll('[epub\\:type~="storyteller:sentence-span"]')) {
+            if (timed.has(sentence.id)) continue;
+            let previousWord = null;
+            const leading = [];
+            for (const word of sentence.querySelectorAll('[epub\\:type~="storyteller:word-span"]')) {
+                if (timed.has(word.id)) {
+                    previousWord = word.id;
+                    companions.set(previousWord,leading.splice(0));
+                } else if (previousWord) companions.get(previousWord).push(word);
+                else leading.push(word);
+            }
+        }
+    };
 
     function sentenceRanges(block) {
         if (boundaries.has(block)) return boundaries.get(block);
@@ -51,6 +68,9 @@
         const target = word && sentence ? sourceSentence(word) : word;
         globalThis.CSS?.highlights?.delete(key);
         const next = target || (word && !markRange(word) ? word : null);
+        for (const node of activeCompanions) node.classList.remove('foliocue-current');
+        activeCompanions = !sentence && word ? companions.get(word.id) || [] : [];
+        for (const node of activeCompanions) node.classList.add('foliocue-current');
         if (previous !== next) {
             previous?.classList.remove('foliocue-current');
             next?.classList.add('foliocue-current');

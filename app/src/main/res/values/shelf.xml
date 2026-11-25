@@ -33,4 +33,13 @@
     <string name="shelf_more_hits">Search more pages</string>
     <string name="shelf_audio">Narrated EPUB</string>
     <string name="shelf_plain">EPUB</string>
+    <string name="shelf_categories">Categories</string>
+    <string name="shelf_ebooks">E-books</string>
+    <string name="shelf_audio_category">Audiobooks</string>
+    <string name="shelf_podcasts">Podcasts</string>
+    <string name="shelf_sort">Sort</string>
+    <string name="sort_new">Newest first</string>
+    <string name="sort_old">Oldest first</string>
+    <string name="sort_az">Title A–Z</string>
+    <string name="sort_za">Title Z–A</string>
 </resources>

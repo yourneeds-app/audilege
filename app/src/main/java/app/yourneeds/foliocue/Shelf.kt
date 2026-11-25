@@ -29,14 +29,14 @@ internal enum class ShelfTab(val label: Int, val icon: Int) {
 }
 
 internal data class ShelfItem(val key: String, val title: String, val author: String,
-    val cover: () -> InputStream?, val open: () -> Unit, val caption: String = "")
+    val cover: () -> InputStream?, val open: () -> Unit, val caption: String = "", val category: String = "", val added: Long? = null)
 
 internal data class RecentBook(val item: ShelfItem, val mode: Mode, val chapter: String, val fraction: Float?)
 
 @Composable
 internal fun ShelfTabs(tab: ShelfTab, enabled: Boolean, onSelect: (ShelfTab) -> Unit) {
     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-        ShelfTab.entries.forEach { target ->
+        listOf(ShelfTab.Library, ShelfTab.Downloads).forEach { target ->
             NavigationBarItem(tab == target, { onSelect(target) }, enabled = enabled,
                 icon = { Icon(painterResource(target.icon), null) }, label = {
                     Text(stringResource(target.label), maxLines = 2, style = MaterialTheme.typography.labelSmall)
@@ -48,7 +48,7 @@ internal fun ShelfTabs(tab: ShelfTab, enabled: Boolean, onSelect: (ShelfTab) -> 
 @Composable
 internal fun ShelfRail(tab: ShelfTab, enabled: Boolean, onSelect: (ShelfTab) -> Unit) {
     NavigationRail(containerColor = MaterialTheme.colorScheme.surface) {
-        ShelfTab.entries.forEach { target ->
+        listOf(ShelfTab.Library, ShelfTab.Downloads).forEach { target ->
             NavigationRailItem(tab == target, { onSelect(target) }, enabled = enabled,
                 icon = { Icon(painterResource(target.icon), null) },
                 label = { Text(stringResource(target.label), style = MaterialTheme.typography.labelSmall) })
@@ -66,7 +66,7 @@ private fun ResumeCard(book: RecentBook, covers: CoverStore, enabled: Boolean, m
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
-                val line = listOf(item.author, book.chapter).filter(String::isNotBlank).joinToString(" · ")
+                val line = listOf(item.author, book.chapter).filter(String::isNotBlank).joinToString(" Â· ")
                 if (line.isNotEmpty()) Text(line, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Icon(painterResource(modeIcon(book.mode)), null, Modifier.size(16.dp))
@@ -96,21 +96,36 @@ private fun ContinueReading(books: List<RecentBook>, covers: CoverStore, enabled
 
 @Composable
 internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<RecentBook>, covers: CoverStore, busy: Boolean,
+    sort: Int, setSort: (Int) -> Unit, category: String, setCategory: (String) -> Unit,
     list: Boolean, setList: (Boolean) -> Unit, openMenu: () -> Unit, more: (() -> Unit)?, seeAll: () -> Unit,
     header: @Composable () -> Unit, empty: @Composable () -> Unit, query: String, setQuery: (String) -> Unit) {
     var search by rememberSaveable(tab) { mutableStateOf(false) }
-    var byAuthor by rememberSaveable { mutableStateOf(false) }
+    var sortMenu by remember { mutableStateOf(false) }
+    val choices = listOf(R.string.sort_new, R.string.sort_old, R.string.sort_az, R.string.sort_za, R.string.shelf_by_author)
     val grid = rememberLazyGridState()
-    LaunchedEffect(tab, query, byAuthor) { grid.scrollToItem(0) }
-    val visible = remember(items, query, byAuthor, tab) {
-        val filtered = items.filter { it.title.contains(query, true) || it.author.contains(query, true) }
-        if (tab != ShelfTab.Discover) filtered else if (byAuthor) filtered.sortedWith(
-            compareBy<ShelfItem> { it.author.isBlank() }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.author }
-                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title })
-        else filtered.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+    LaunchedEffect(tab, query, sort, category) { grid.scrollToItem(0) }
+    val visible = remember(items, query, sort, category, tab) {
+        val filtered = items.filter { (tab != ShelfTab.Discover || category.isEmpty() || it.category == category) &&
+            (it.title.contains(query, true) || it.author.contains(query, true)) }
+        val alphabet = compareBy<ShelfItem, String>(String.CASE_INSENSITIVE_ORDER) { it.title }
+        filtered.sortedWith(when (sort) {
+            0 -> compareByDescending<ShelfItem> { it.added }.then(alphabet)
+            1 -> compareBy<ShelfItem> { it.added == null }.thenBy { it.added }.then(alphabet)
+            3 -> alphabet.reversed()
+            4 -> compareBy<ShelfItem,String>(String.CASE_INSENSITIVE_ORDER) { it.author }.then(alphabet)
+            else -> alphabet
+        })
     }
     Column(Modifier.fillMaxSize().statusBarsPadding().displayCutoutPadding()) {
-        FolioBar(stringResource(tab.label), openMenu) {
+        FolioBar(stringResource(if (tab == ShelfTab.Discover) R.string.shelf_categories else tab.label), openMenu) {
+            Box {
+                TextButton(onClick = { sortMenu = true }) { Text(stringResource(R.string.shelf_sort)) }
+                DropdownMenu(sortMenu, { sortMenu = false }) {
+                    choices.forEachIndexed { index, label -> DropdownMenuItem(text = { Text(stringResource(label)) },
+                        leadingIcon = { if (index == sort) Text("✓") },
+                        onClick = { setSort(index); sortMenu = false }) }
+                }
+            }
             IconButton(onClick = { search = !search; if (!search) setQuery("") }) {
                 Icon(if (search) Icons.Default.Close else Icons.Default.Search, stringResource(if (search) R.string.close else R.string.shelf_search))
             }
@@ -139,11 +154,13 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                             stringResource(if (list) R.string.shelf_grid else R.string.shelf_list)) }
                     }
                 }
-                if (tab == ShelfTab.Discover) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(!byAuthor, { byAuthor = false }, { Text(stringResource(R.string.shelf_by_title)) })
-                            FilterChip(byAuthor, { byAuthor = true }, { Text(stringResource(R.string.shelf_by_author)) })
+                if (tab == ShelfTab.Discover) item(span = { GridItemSpan(maxLineSpan) }) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for ((value, label) in listOf("" to R.string.shelf_discover, "ebook" to R.string.shelf_ebooks,
+                            "audio" to R.string.shelf_audio_category, "audilege" to R.string.audilege_brand, "podcast" to R.string.shelf_podcasts)) {
+                            if (value.isEmpty() || items.any { it.category == value }) {
+                                FilterChip(category == value, { setCategory(value) }, { Text(stringResource(label)) })
+                            }
                         }
                     }
                 }

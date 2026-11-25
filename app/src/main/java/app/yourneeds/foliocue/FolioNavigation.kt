@@ -34,7 +34,7 @@ internal data class MenuItem(val label: Int, val selected: Boolean = false, val 
 @Composable
 internal fun FolioDrawer(
     title: String, destinations: List<MenuItem>, brand: Boolean = false,
-    bottomItem: MenuItem? = null,
+    bottomItem: MenuItem? = null, profileItem: MenuItem? = null,
     content: @Composable (() -> Unit) -> Unit,
 ) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
@@ -75,9 +75,12 @@ internal fun FolioDrawer(
                     )
                 }
             }
-            bottomItem?.let { item ->
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                NavigationDrawerItem(label = { Text(stringResource(item.label)) }, selected = item.selected,
+            if (bottomItem != null || profileItem != null) HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            listOfNotNull(profileItem, bottomItem).forEach { item ->
+                NavigationDrawerItem(label = { Column {
+                    Text(stringResource(item.label))
+                    item.supporting?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                } }, selected = item.selected,
                     icon = item.icon?.let { drawable -> { Icon(painterResource(drawable), null) } },
                     onClick = { scope.launch { drawer.close(); item.action() } })
             }

@@ -192,6 +192,7 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
                         style = MaterialTheme.typography.bodySmall)
                 }
                 item { ListeningChart(recap.bars, period) }
+                if (period == ListeningPeriod.YEAR) item { ActivityCalendar(anchor.year, today, summary.history) }
                 recap.peak?.let { peak -> item {
                     val locale = LocalConfiguration.current.locales[0]
                     val format = when (period) {
@@ -250,6 +251,40 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
                                 Text(listeningTimeLabel(author.millis), style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.primary)
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActivityCalendar(year: Int, today: LocalDate, history: List<ListeningDay>) {
+    val first = LocalDate.of(year, 1, 1)
+    val last = minOf(today, first.plusYears(1).minusDays(1))
+    val activity = remember(history, year) { history.filter { it.date.year == year }.associate { it.date to it.millis } }
+    val peak = (activity.values.maxOrNull() ?: 0L).coerceAtLeast(1L)
+    val firstMonday = first.minusDays((first.dayOfWeek.value - 1).toLong())
+    val fullWeeks = (last.toEpochDay() - firstMonday.toEpochDay()).toInt() / 7 + 1
+    val count = activity.values.count { it > 0 }
+    val description = stringResource(R.string.statistics_active_days) + " · " + count
+    OutlinedCard(Modifier.fillMaxWidth(), shape = AudilegeLayout.cardShape) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(description, style = MaterialTheme.typography.labelLarge)
+            Row(Modifier.horizontalScroll(rememberScrollState()).semantics { contentDescription = description },
+                horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                repeat(fullWeeks.coerceIn(0,54)) { week ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        repeat(7) { weekday ->
+                            val date = firstMonday.plusDays((week * 7 + weekday).toLong())
+                            val value = activity[date] ?: 0L
+                            val color = when {
+                                date < first || date > last -> androidx.compose.ui.graphics.Color.Transparent
+                                value <= 0 -> MaterialTheme.colorScheme.surfaceVariant
+                                else -> MaterialTheme.colorScheme.primary.copy(alpha = .28f + .72f * (value.toFloat() / peak))
+                            }
+                            Spacer(Modifier.size(7.dp).background(color, RoundedCornerShape(1.dp)))
                         }
                     }
                 }

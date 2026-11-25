@@ -49,6 +49,7 @@ internal class ReaderPage(
     private var currentMark = Mark(null, false)
     private var submittedMark: Mark? = null
     private var markInFlight = false
+    private var timedIds: String? = null
     private var closed = false
     private var readyToShow: (() -> Unit)? = null
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
@@ -124,6 +125,7 @@ internal class ReaderPage(
                     override fun onComplete(requestId: Long) {
                         navigateToStart()
                         initialized = true
+                        timedIds?.let(::timedWords)
                         onReadingActivity()
                         flushHighlight()
                         readyToShow?.invoke()
@@ -318,6 +320,15 @@ internal class ReaderPage(
 
     fun jump(id: String) {
         evaluateJavascript("document.getElementById(${JSONObject.quote(id)})?.scrollIntoView()", null)
+    }
+
+    fun timedWords(encodedIds: String) {
+        timedIds = encodedIds
+        if (!closed && initialized) {
+            evaluateJavascript("window.audilegeTimedWords?.($encodedIds)", null)
+            submittedMark = null
+            flushHighlight()
+        }
     }
 
     fun highlight(id: String?, sentence: Boolean = false) {

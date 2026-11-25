@@ -337,7 +337,7 @@ internal object AudilegePlayback {
                         lastUI = now
                         service?.refresh()
                     }
-                    delay(if (playing && !loading) 24L else 200L)
+                    delay(if (playing && !loading && opened.mode == Mode.Follow) 16L else if (playing && !loading) 24L else 200L)
                 }
             } catch (cancel: CancellationException) { throw cancel }
               catch (_: Exception) { if (isActive) chapterFailure() }

@@ -6,6 +6,9 @@ Audilege is an Android reader and audiobook player for Audilege Server and [Book
 
 ## Getting started
 
+- Open **Categories → Discover** to browse all titles, or select an available media category. Use **Sort** to change the order. Server and profile selection is at the bottom of the drawer, above Settings.
+- The yearly statistics include a daily activity calendar. Short words without individual timestamps are highlighted alongside a timed word in the same marked sentence when the EPUB provides word spans.
+
 - With Audilege Server, choose the existing account sign-in option and enter your own server address and Audilege Server credentials.
 - While reading along, open **Read-along settings → Highlight text** to choose **Word** or **Sentence**. Word-level timing comes from the book's audio overlays. Audilege remembers your preference.
 

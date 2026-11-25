@@ -52,6 +52,7 @@ internal data class CatalogEntry(
     val title: String, val url: URI, val book: Boolean, val author: String = "",
     val coverUrl: URI? = null, val editionFileId: Long? = null,
     val primaryFileId: Long? = null, val readingPercent: Double? = null,
+    val category: String = "", val added: Long? = null,
 )
 internal data class CatalogPage(val entries: List<CatalogEntry>, val next: URI?)
 internal class CatalogAccessException(val messageId: Int) : IllegalStateException()
@@ -106,7 +107,7 @@ internal class Catalog(private val profile: Profile, password: String) : Library
                 val book = rel.startsWith("http://opds-spec.org/acquisition") && type.substringBefore(';') == "application/epub+zip"
                 val section = type.startsWith("application/atom+xml") && rel !in listOf("self", "related")
                 if ((!book && !section) || title.isBlank()) return@mapNotNull null
-                CatalogEntry(title, url.resolve(link.getAttribute("href")), book, authors, cover)
+                CatalogEntry(title, url.resolve(link.getAttribute("href")), book, authors, cover, added = runCatching { java.time.Instant.parse(entry.children("published").firstOrNull()?.textContent).toEpochMilli() }.getOrNull())
             }.distinct()
         }
         val next = feed.children("link").firstOrNull { it.getAttribute("rel") == "next" }
