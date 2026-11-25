@@ -1,6 +1,8 @@
 package app.yourneeds.foliocue
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Brush
@@ -19,11 +21,15 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.io.InputStream
@@ -130,7 +136,7 @@ private fun ContinueReading(books: List<RecentBook>, covers: CoverStore, enabled
 private fun RecentBook.percentLabel() = fraction?.let { "${(it * 100).roundToInt()} %" }
 
 @Composable
-internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<RecentBook>, covers: CoverStore, busy: Boolean,
+internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<RecentBook>, covers: CoverStore, busy: Boolean, loading: Boolean,
     sort: Int, setSort: (Int) -> Unit, category: String, setCategory: (String) -> Unit,
     list: Boolean, setList: (Boolean) -> Unit, openMenu: () -> Unit, more: (() -> Unit)?, seeAll: () -> Unit,
     header: @Composable () -> Unit, empty: @Composable () -> Unit, query: String, setQuery: (String) -> Unit,
@@ -139,6 +145,16 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
     status: ShelfStatus, setStatus: (ShelfStatus) -> Unit) {
     val canSearch = tab == ShelfTab.Home || tab == ShelfTab.Library
     var search by rememberSaveable(tab) { mutableStateOf(false) }
+    var focusSearch by remember(tab) { mutableStateOf(false) }
+    val searchFocus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(focusSearch) {
+        if (focusSearch) {
+            searchFocus.requestFocus()
+            keyboard?.show()
+            focusSearch = false
+        }
+    }
     var sortMenu by remember { mutableStateOf(false) }
     val choices = listOf(R.string.sort_new, R.string.sort_old, R.string.sort_az, R.string.sort_za, R.string.shelf_by_author, R.string.shelf_by_series)
     val grid = rememberLazyGridState()
@@ -149,9 +165,13 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
     val home = tab == ShelfTab.Home && query.isBlank() && !search
     val canFilter = tab == ShelfTab.Library || tab == ShelfTab.Discover
     val podcastView = canFilter && category == "podcast"
+    val filtering = query.isNotBlank() || (canFilter && category.isNotEmpty()) ||
+        (tab == ShelfTab.Library && status != ShelfStatus.All) ||
+        facetAuthor.isNotBlank() || facetSeries.isNotBlank() || facetNarrator.isNotBlank()
     val show = shows.firstOrNull { showKey.isNotEmpty() && it.showKey == showKey }
     LaunchedEffect(tab, query, sort, category, showKey, facetAuthor, facetSeries, facetNarrator, status) { grid.scrollToItem(0) }
     val visible = remember(items, query, sort, category, tab, showKey, home, facetAuthor, facetSeries, facetNarrator, status) {
+        val term = query.trim()
         val filtered = items.filter { (!canFilter || category.isEmpty() || it.category == category) &&
             (!podcastView || showKey.isEmpty() || it.showKey == showKey) &&
             (!home || it.category != "podcast") &&
@@ -163,7 +183,8 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                 ShelfStatus.Started -> !it.played && it.percent > 0.0 && it.percent < 100.0
                 ShelfStatus.Finished -> it.played || it.percent >= 100.0
             }) &&
-            (it.title.contains(query, true) || it.author.contains(query, true) || it.showTitle.contains(query, true) || it.narrator.contains(query, true) || it.series.contains(query, true)) }
+            (it.title.contains(term, true) || it.author.contains(term, true) || it.showTitle.contains(term, true) ||
+                it.narrator.contains(term, true) || it.series.contains(term, true)) }
         val alphabet = compareBy<ShelfItem, String>(String.CASE_INSENSITIVE_ORDER) { it.title }
         val visibleEbooks = filtered.filter { it.category == "ebook" }.mapNotNull { it.bookId }.toSet()
         val grouped = filtered.filterNot { it.category == "audio" && it.companionId in visibleEbooks }
@@ -194,12 +215,31 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                         onClick = { setSort(index); sortMenu = false }) }
                 }
             }
-            if (canSearch) IconButton(onClick = { search = !search; if (!search) setQuery("") }) {
-                Icon(if (search) Icons.Default.Close else Icons.Default.Search, stringResource(if (search) R.string.close else R.string.shelf_search))
+            if (canSearch) {
+                val searchOpen = search || query.isNotEmpty()
+                IconButton(onClick = {
+                    search = !searchOpen
+                    if (search) focusSearch = true
+                    else {
+                        keyboard?.hide()
+                        setQuery("")
+                    }
+                }) {
+                    Icon(if (searchOpen) Icons.Default.Close else Icons.Default.Search,
+                        stringResource(if (searchOpen) R.string.shelf_close_search else R.string.shelf_search))
+                }
             }
         }
         if (canSearch && (search || query.isNotEmpty())) OutlinedTextField(query, setQuery, singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = AudilegeLayout.pageInset), label = { Text(stringResource(R.string.shelf_filter)) })
+            modifier = Modifier.fillMaxWidth().padding(horizontal = AudilegeLayout.pageInset).focusRequester(searchFocus),
+            label = { Text(stringResource(R.string.shelf_filter)) },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+            trailingIcon = if (query.isEmpty()) null else {
+                { IconButton(onClick = { setQuery(""); focusSearch = true }) {
+                    Icon(Icons.Default.Close, stringResource(R.string.shelf_clear_search))
+                } }
+            })
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val columns = when {
                 home -> GridCells.Fixed(3)
@@ -279,8 +319,16 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                     }
                 }
                 items(if (home) visible.take(3) else visible, key = { it.key }) { book -> LibraryTile(book, covers, list && !home, !busy, book.open) }
-                if (visible.isEmpty() && !busy && (!home || shows.isEmpty())) item(span = { GridItemSpan(maxLineSpan) }) {
-                    if (query.isNotBlank() || (canFilter && category.isNotEmpty()) || (tab == ShelfTab.Library && status != ShelfStatus.All) || facetAuthor.isNotBlank() || facetSeries.isNotBlank() || facetNarrator.isNotBlank()) Text(stringResource(R.string.shelf_no_results)) else empty()
+                if (visible.isEmpty() && !busy && !loading && (!home || shows.isEmpty())) item(span = { GridItemSpan(maxLineSpan) }) {
+                    if (filtering) Column {
+                        Text(stringResource(R.string.shelf_no_results), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick = {
+                            setQuery("")
+                            if (canFilter) setCategory("")
+                            if (tab == ShelfTab.Library) setStatus(ShelfStatus.All)
+                            clearFacet()
+                        }) { Text(stringResource(R.string.shelf_reset_filters)) }
+                    } else empty()
                 }
                 if (more != null && !home) item(span = { GridItemSpan(maxLineSpan) }) {
                     OutlinedButton(onClick = more, enabled = !busy) {

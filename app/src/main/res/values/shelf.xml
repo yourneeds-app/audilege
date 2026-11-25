@@ -4,8 +4,11 @@
     <string name="shelf_discover">Discover</string>
     <string name="shelf_profile">Profile</string>
     <string name="shelf_see_all">See all</string>
-    <string name="shelf_search">Search books</string>
-    <string name="shelf_filter">Title or author</string>
+    <string name="shelf_search">Search library</string>
+    <string name="shelf_filter">Title, author, narrator or series</string>
+    <string name="shelf_close_search">Close search</string>
+    <string name="shelf_clear_search">Clear search</string>
+    <string name="shelf_reset_filters">Reset filters</string>
     <string name="shelf_no_results">No matching books</string>
     <string name="shelf_grid">Cover grid</string>
     <string name="shelf_list">List view</string>

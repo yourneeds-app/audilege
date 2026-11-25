@@ -546,7 +546,7 @@ internal fun BookReader(
                         Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.List, stringResource(R.string.contents))
                     }
                     if (mode != Mode.Listen) TextButton(onClick = { dialog = R.string.settings }) {
-                        Text("Aa", Modifier.semantics { contentDescription = context.getString(R.string.settings) })
+                        Text("Aa", Modifier.semantics { contentDescription = context.getString(R.string.design_reading) })
                     }
                 }
             }

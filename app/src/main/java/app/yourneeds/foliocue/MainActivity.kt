@@ -546,7 +546,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                                         ShelfTab.Discover -> category
                                         else -> ""
                                     }
-                                    ShelfContent(tab,items,recent,covers,busy,
+                                    ShelfContent(tab,items,recent,covers,busy, catalogLoading && tab != ShelfTab.Downloads,
                                         if (selectedCategory == "podcast") podcastOrder else shelfSort, {
                                             if (selectedCategory == "podcast") {
                                                 podcastOrder = it; display.edit().putInt("podcast.order",it).apply()
@@ -578,9 +578,6 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                                             }
                                         },empty = {
                                             if (!catalogLoading || tab == ShelfTab.Downloads) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                if (selected == null && tab == ShelfTab.Home && query.isBlank()) {
-                                                    AudilegeWordmark(Modifier.padding(vertical = 8.dp).widthIn(max = 218.dp).fillMaxWidth())
-                                                }
                                                 Text(stringResource(when { tab == ShelfTab.Downloads -> R.string.shelf_empty_downloads
                                                     selected == null -> R.string.shelf_empty
                                                     else -> R.string.empty }))
