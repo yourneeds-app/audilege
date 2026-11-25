@@ -159,7 +159,7 @@ internal fun continueReadingBooks(
                         }
                     } else null
                     audio ?: publication?.cover?.let(publication::open) ?: entry?.let(cover)
-                }, { resume(edition.local, entry, mode) })
+                }, { resume(edition.local, entry, mode) }, category = if (OfflineBooks.isPodcast(reader, edition.file)) "podcast" else entry?.category.orEmpty())
             val showLocalChapter = !serverPosition || reader.getFloat("$id.shelfPercent", -1f) == percent
             val knownChapter = showLocalChapter && (reader.contains("$id.chapter") || reader.contains("$id.shelfChapterIndex"))
             val label = if (knownChapter && reader.getInt("$id.shelfChapterIndex", -1) == index)

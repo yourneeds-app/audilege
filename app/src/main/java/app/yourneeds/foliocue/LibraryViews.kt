@@ -84,11 +84,11 @@ internal class CoverStore {
 }
 
 @Composable
-internal fun BookCover(title: String, covers: CoverStore, key: String, load: () -> InputStream?, modifier: Modifier) =
-    BookCover(title, covers, key, listOf(load), modifier)
+internal fun BookCover(title: String, covers: CoverStore, key: String, load: () -> InputStream?, modifier: Modifier, crop: Boolean = false) =
+    BookCover(title, covers, key, listOf(load), modifier, crop)
 
 @Composable
-internal fun BookCover(title: String, covers: CoverStore, key: String, sources: List<() -> InputStream?>, modifier: Modifier) {
+internal fun BookCover(title: String, covers: CoverStore, key: String, sources: List<() -> InputStream?>, modifier: Modifier, crop: Boolean = false) {
     val bitmap by produceState<Bitmap?>(null, key) {
         value = null
         value = covers.get(key, sources)
@@ -96,13 +96,11 @@ internal fun BookCover(title: String, covers: CoverStore, key: String, sources: 
     BoxWithConstraints(modifier.clearAndSetSemantics { }, contentAlignment = Alignment.Center) {
         val image = bitmap
         if (image != null) {
-            // Keep the shelf slot stable, but round the artwork's own edges rather than
-            // a larger coloured box. Different cover ratios remain intact and uncropped.
             val ratio = image.width.toFloat() / image.height
             val width = minOf(maxWidth, maxHeight * ratio)
             Image(image.asImageBitmap(), contentDescription = null,
-                modifier = Modifier.size(width, width / ratio).clip(RoundedCornerShape(4.dp)),
-                contentScale = ContentScale.Fit)
+                modifier = (if (crop) Modifier.fillMaxSize() else Modifier.size(width, width / ratio)).clip(RoundedCornerShape(4.dp)),
+                contentScale = if (crop) ContentScale.Crop else ContentScale.Fit)
         } else Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = RoundedCornerShape(4.dp)) {
             Column(Modifier.fillMaxSize().padding(8.dp), verticalArrangement = Arrangement.Center,
@@ -151,10 +149,10 @@ internal fun LibraryTile(item: ShelfItem, covers: CoverStore, list: Boolean, ena
         }
         if (list) Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            BookCover(item.title, covers, item.key, item.cover, Modifier.width(54.dp).aspectRatio(if (square) 1f else .70f))
+            BookCover(item.title, covers, item.key, item.cover, Modifier.width(54.dp).aspectRatio(if (square) 1f else .70f), crop = item.category == "podcast")
             description()
         } else Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            BookCover(item.title, covers, item.key, item.cover, Modifier.fillMaxWidth().aspectRatio(if (square) 1f else .72f))
+            BookCover(item.title, covers, item.key, item.cover, Modifier.fillMaxWidth().aspectRatio(if (square) 1f else .72f), crop = item.category == "podcast")
             description()
         }
     }
@@ -198,7 +196,7 @@ internal fun DetailScreen(
                 BoxWithConstraints {
                     val coverWidth = if (maxWidth >= 600.dp) 190.dp else (maxWidth * .42f).coerceAtMost(160.dp)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        BookCover(title, covers, coverKey, loadCover, Modifier.width(coverWidth).aspectRatio(if (podcast) 1f else .70f))
+                        BookCover(title, covers, coverKey, loadCover, Modifier.width(coverWidth).aspectRatio(if (podcast) 1f else .70f), crop = podcast)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold)

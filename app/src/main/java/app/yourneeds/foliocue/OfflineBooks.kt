@@ -17,6 +17,8 @@ import kotlinx.coroutines.withContext
 
 /** Download filenames predate BookOrbit progress sync. Record the server edition alongside each copy. */
 internal object OfflineBooks {
+    fun isPodcast(prefs: SharedPreferences, file: File): Boolean = prefs.contains("podcast.${keyOf(file.absolutePath)}")
+
     fun rememberPodcast(prefs: SharedPreferences, file: File, entry: CatalogEntry): Boolean {
         if (entry.category != "podcast") return false
         val key = "podcast.${keyOf(file.absolutePath)}"

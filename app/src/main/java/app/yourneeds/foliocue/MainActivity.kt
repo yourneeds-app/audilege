@@ -172,7 +172,10 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                 val orbit = catalog as? OrbitCatalog
                 val online = orbit?.let { OnlineBook(it, it.details(entry.url, if (resumeIn != null) entry.editionFileId else null)) }
                 val file = File(folder, keyOf(online?.let { "${entry.url}#${it.detail.fileId}" } ?: entry.url.toString()) + ".epub")
-                if (online != null) OfflineBooks.associate(readerPrefs,file,online.detail)
+                if (online != null) {
+                    OfflineBooks.associate(readerPrefs,file,online.detail)
+                    OfflineBooks.rememberPodcast(readerPrefs,file,entry)
+                }
                 BookDetail(entry,online,file,online?.let { it.catalog.publication(it.detail,entry.title) }
                     ?: file.takeIf(File::isFile)?.let(::Publication), coverKey = coverKey(entry), coverLoader = { cover(entry) })
             }
@@ -497,7 +500,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                                 Box(Modifier.weight(if (split) .52f else 1f)) { renderDetail(detail) }
                             }
                         }
-                        MiniPlayer(covers) { opened = it }
+                        MiniPlayer(covers, readerPrefs) { opened = it }
                         if (!rail && (detail == null || split)) ShelfTabs(tab,!busy) { navigate(it) }
                     }
                     }

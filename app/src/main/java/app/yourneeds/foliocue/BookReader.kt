@@ -534,7 +534,7 @@ internal fun BookReader(
                 }
             }
             if (mode == Mode.Listen) {
-                ListeningArtwork(book, online, file, covers, location.index, Modifier.weight(1f))
+                ListeningArtwork(book, online, file, covers, location.index, Modifier.weight(1f), podcast = OfflineBooks.isPodcast(prefs, file))
             } else {
                 key(displayed) {
                     AndroidView(

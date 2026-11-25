@@ -95,7 +95,7 @@ private fun ContinueReading(books: List<RecentBook>, covers: CoverStore, enabled
                                 Text(stringResource(modeAction(lead.mode,true)), Modifier.padding(horizontal = 14.dp, vertical = 8.dp), style = MaterialTheme.typography.labelLarge)
                             }
                         }
-                        BookCover(item.title, covers, item.key, item.cover, Modifier.width(artWidth).aspectRatio(if (lead.mode == Mode.Listen) 1f else .67f))
+                        BookCover(item.title, covers, item.key, item.cover, Modifier.width(artWidth).aspectRatio(if (lead.mode == Mode.Listen || item.category == "podcast") 1f else .67f), crop = item.category == "podcast")
                     }
                 }
             }
@@ -107,7 +107,7 @@ private fun ContinueReading(books: List<RecentBook>, covers: CoverStore, enabled
                     Surface(onClick = book.item.open, enabled = enabled, modifier = Modifier.weight(1f),
                         shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainer) {
                         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            BookCover(book.item.title, covers, book.item.key, book.item.cover, Modifier.width(32.dp).aspectRatio(if (book.mode == Mode.Listen) 1f else .67f))
+                            BookCover(book.item.title, covers, book.item.key, book.item.cover, Modifier.width(32.dp).aspectRatio(if (book.mode == Mode.Listen || book.item.category == "podcast") 1f else .67f), crop = book.item.category == "podcast")
                             Column {
                                 Text(book.item.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
                                 Text(listOfNotNull(stringResource(book.mode.label), book.percentLabel()).joinToString(" · "), style = MaterialTheme.typography.labelSmall)
@@ -197,7 +197,7 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                                     shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainer) {
                                     Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                        BookCover(episode.showTitle, covers, episode.key, episode.cover, Modifier.size(52.dp))
+                                        BookCover(episode.showTitle, covers, episode.key, episode.cover, Modifier.size(52.dp), crop = true)
                                         Column(Modifier.weight(1f)) {
                                             Text(episode.showTitle.ifBlank { episode.author }, style = MaterialTheme.typography.titleSmall)
                                             if (episode.author.isNotBlank() && episode.author != episode.showTitle)

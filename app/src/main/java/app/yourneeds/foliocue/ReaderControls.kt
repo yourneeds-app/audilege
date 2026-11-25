@@ -44,14 +44,14 @@ internal fun PlayerTheme(mode: Mode, colors: ColorScheme, book: Publication, onl
 
 @Composable
 internal fun ListeningArtwork(
-    book: Publication, online: OnlineBook?, file: File, covers: CoverStore, chapter: Int, modifier: Modifier,
+    book: Publication, online: OnlineBook?, file: File, covers: CoverStore, chapter: Int, modifier: Modifier, podcast: Boolean,
 ) {
     BoxWithConstraints(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         val width = minOf((maxHeight * .58f).coerceAtLeast(64.dp), maxWidth * .69f, 360.dp)
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = AudilegeLayout.pageInset, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             BookCover(book.title, covers, listeningCoverKey(file, book, online), listeningCoverSources(book, online),
-                Modifier.width(width).aspectRatio(1f))
+                Modifier.width(width).aspectRatio(1f), crop = podcast)
             Spacer(Modifier.height(3.dp))
             val chapterLabel = book.chapterTitle(chapter) ?: stringResource(R.string.audio_chapter, chapter + 1)
             if (!chapterLabel.equals(book.title, ignoreCase = true)) {
@@ -224,7 +224,7 @@ private fun SleepTimer(modifier: Modifier) {
 }
 
 @Composable
-internal fun MiniPlayer(covers: CoverStore, onOpen: (OpenBook) -> Unit) {
+internal fun MiniPlayer(covers: CoverStore, prefs: android.content.SharedPreferences, onOpen: (OpenBook) -> Unit) {
     val player = AudilegePlayback
     val book = player.activeBook ?: return
     Surface(modifier = Modifier.padding(horizontal = AudilegeLayout.pageInset, vertical = 4.dp),
@@ -235,7 +235,7 @@ internal fun MiniPlayer(covers: CoverStore, onOpen: (OpenBook) -> Unit) {
             Row(Modifier.weight(1f).clickable(onClickLabel = openLabel) { onOpen(book) }.heightIn(min = 48.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BookCover("", covers, listeningCoverKey(book.file, book.publication, book.online),
-                    listeningCoverSources(book.publication, book.online), Modifier.size(38.dp))
+                    listeningCoverSources(book.publication, book.online), Modifier.size(38.dp), crop = OfflineBooks.isPodcast(prefs, book.file))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
                     Text(book.publication.title, style = MaterialTheme.typography.titleSmall,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
