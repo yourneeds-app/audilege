@@ -119,7 +119,14 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
     var reload by remember { mutableIntStateOf(0) }
     val folder = remember(selected) { File(context.filesDir, "books/${selected?.id ?: "local"}") }
     var library by remember(folder) { mutableStateOf(emptyList<OpenBook>()) }
-    LaunchedEffect(folder, opened, storageRevision) {
+    val podcastDownloadsRevision = watchPreference(display, setOf(PodcastDownloadJob.REVISION)) {
+        display.getLong(PodcastDownloadJob.REVISION, 0L)
+    }
+    LaunchedEffect(selected) {
+        val enabled = display.getBoolean(PodcastDownloadJob.ENABLED, false)
+        PodcastDownloadJob.schedule(context, enabled, checkNow = enabled && selected?.accountLogin == true)
+    }
+    LaunchedEffect(folder, opened, storageRevision, podcastDownloadsRevision) {
         if (opened == null) library = withContext(Dispatchers.IO) {
             folder.listFiles().orEmpty().filter { it.extension == "epub" }
                 .mapNotNull { file -> runCatching { OpenBook(file, Publication(file)) }.getOrNull() }

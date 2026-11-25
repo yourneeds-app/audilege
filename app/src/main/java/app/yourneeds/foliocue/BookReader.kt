@@ -47,7 +47,8 @@ internal enum class Typeface(val label: Int, val css: String) {
 }
 
 private data class Location(val index: Int, val anchor: String? = null, val revision: Int = 0,
-    val cfi: String? = null, val scroll: Int? = null, val textNavigation: Boolean = false, val serverSeconds: Double? = null)
+    val cfi: String? = null, val scroll: Int? = null, val textNavigation: Boolean = false, val serverSeconds: Double? = null,
+    val elapsedMs: Int? = null)
 
 private data class ListenJump(val start: Int, val direction: Int, val anchor: String? = null)
 private sealed interface SectionAudio {
@@ -103,6 +104,9 @@ internal fun BookReader(
     val history = remember { mutableStateListOf<ReaderTarget>() }
     val bookmarks = remember(bookKey) { ReaderBookmarks(prefs, bookKey) }
     var marks by remember(bookKey) { mutableStateOf(bookmarks.load().filter { it.chapter in book.spine.indices }) }
+    var bookmarkRevision by remember(bookKey) { mutableIntStateOf(0) }
+    var bookmarkPending by remember(bookKey) { mutableStateOf(false) }
+    val bookmarkLock = remember(bookKey) { kotlinx.coroutines.sync.Mutex() }
     var selectedPassage by remember { mutableStateOf<Pair<Int, PagePassage>?>(null) }
     var highlightDelay by remember { mutableIntStateOf(prefs.getInt("$bookKey.highlightDelay", 0).coerceIn(-1500, 1500)) }
     var sentenceMark by remember { mutableStateOf(prefs.getBoolean("highlightSentence", false)) }
@@ -178,7 +182,7 @@ internal fun BookReader(
         val chosen = chosenAudioStart
         chosenAudioStart = null
         if (chosen != null) {
-            playback.start(context, openedAudio.copy(mode = mode), chosen.index, chosen.anchor, false, sync, chosen.cfi, chosen.serverSeconds)
+            playback.start(context, openedAudio.copy(mode = mode), chosen.index, chosen.anchor, false, sync, chosen.cfi, chosen.serverSeconds, chosen.elapsedMs)
             return
         }
         // The media notification can stop playback while this reader still holds its opening location.
@@ -221,7 +225,8 @@ internal fun BookReader(
                 val s = ms / 1000
                 "%d:%02d".format(s / 60, s % 60)
             }.orEmpty()
-            done(fallback.copy(anchor = playback.anchor.takeIf { attached } ?: lastAnchor ?: current.anchor, label = label))
+            done(fallback.copy(anchor = playback.anchor.takeIf { attached } ?: lastAnchor ?: current.anchor, label = label,
+                audioMs = playback.progress?.elapsedMs?.takeIf { attached }))
         } else if (page == null) done(fallback)
         else {
             val restored = mode == Mode.Read && movement == 0 && !current.textNavigation &&
@@ -235,6 +240,14 @@ internal fun BookReader(
     }
     fun navigate(target: ReaderTarget) {
         if (target.chapter !in book.spine.indices) return
+        if (target.audioMs != null && mode == Mode.Listen) {
+            if (attached) playback.selectChapter(target.chapter, target.anchor, target.audioMs)
+            else {
+                location = Location(target.chapter, target.anchor, displayed.revision + 1, elapsedMs = target.audioMs)
+                chosenAudioStart = location
+            }
+            return
+        }
         val next = Location(target.chapter, target.anchor, displayed.revision + 1, target.cfi, target.offset,
             textNavigation = true)
         if (mode == Mode.Read) {
@@ -259,14 +272,17 @@ internal fun BookReader(
         }
     }
     fun addBookmark(target: ReaderTarget) {
-        marks = listOf(target) + marks.filterNot { old ->
+        val duplicate = marks.any { old ->
             old.chapter == target.chapter && when {
+                target.audioMs != null -> old.audioMs == target.audioMs
                 target.cfi != null -> target.cfi == old.cfi
                 target.anchor != null -> target.anchor == old.anchor
                 else -> old.cfi == null && old.anchor == null && old.offset == target.offset
             }
         }
-        bookmarks.save(marks)
+        if (duplicate) return
+        marks = bookmarks.add(target.copy(syncKey = java.util.UUID.randomUUID().toString()))
+        bookmarkRevision++
     }
     fun saveNow(done: () -> Unit = {}) {
         if (syncState == SyncState.Conflict) { done(); return }
@@ -704,15 +720,29 @@ internal fun BookReader(
         }
     }
 
+    LaunchedEffect(dialog == R.string.reader_bookmarks,bookmarkRevision,online) {
+        if (online != null && online.catalog.supportsSharedBookmarks) {
+            bookmarkLock.lock()
+            try {
+                marks = bookmarks.synchronize(online,book)
+                bookmarkPending=false
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                bookmarkPending=true
+            } finally { bookmarkLock.unlock() }
+        }
+    }
+
     dialog?.let { title ->
         val choose: (ReaderTarget) -> Unit = { target -> dialog = null; visit(target) }
         if (title == R.string.eq_title) AudiobookEqualizerDialog(prefs) { dialog = null }
         else if (title == R.string.reader_search) ReaderSearchDialog(book, choose) { dialog = null }
         else if (title == R.string.reader_bookmarks) ReaderBookmarksDialog(book, marks,
             add = { captureVisible(::addBookmark) }, open = choose, remove = { mark ->
-                marks = marks - mark
-                bookmarks.save(marks)
-            }, dismiss = { dialog = null })
+                marks = bookmarks.remove(mark)
+                bookmarkRevision++
+            }, pending = bookmarkPending, retry = { bookmarkRevision++ }, dismiss = { dialog = null })
         else AlertDialog(onDismissRequest = { dialog = null },
             title = { Text(stringResource(title)) },
             confirmButton = { TextButton(onClick = { dialog = null }) { Text(stringResource(R.string.close)) } },

@@ -76,24 +76,69 @@ internal data class ReaderTarget(
     val anchor: String? = null,
     val label: String = "",
     val offset: Int = 0,
+    val audioMs: Int? = null, val syncKey: String = "", val synced: Boolean = false,
 )
 
 internal class ReaderBookmarks(private val prefs: SharedPreferences, key: String) {
     private val field = "$key.bookmarks"
-    fun load(): List<ReaderTarget> = runCatching {
+    private val removedField = "$field.removed"
+
+    @Synchronized fun load(): List<ReaderTarget> = runCatching {
         val rows = JSONArray(prefs.getString(field, "[]"))
         (0 until rows.length()).mapNotNull { index ->
             val row = rows.optJSONObject(index) ?: return@mapNotNull null
             ReaderTarget(row.getInt("chapter"), row.optString("cfi").ifBlank { null },
-                row.optString("anchor").ifBlank { null }, row.optString("label"), row.optInt("offset"))
+                row.optString("anchor").ifBlank { null }, row.optString("label"), row.optInt("offset"),
+                row.optInt("audioMs",-1).takeIf { it >= 0 }, row.optString("syncKey"), row.optBoolean("synced"))
         }
     }.getOrDefault(emptyList())
 
-    fun save(rows: List<ReaderTarget>) {
+    @Synchronized fun add(mark: ReaderTarget): List<ReaderTarget> {
+        val rows = listOf(mark) + load()
+        write(rows, removedKeys())
+        return rows
+    }
+
+    @Synchronized fun remove(mark: ReaderTarget): List<ReaderTarget> {
+        val current = load()
+        val entry = current.firstOrNull { row ->
+            if (mark.syncKey.isNotEmpty()) row.syncKey == mark.syncKey
+            else row.copy(syncKey = "", synced = mark.synced) == mark
+        } ?: return current
+        val rows = current - entry
+        val removed = removedKeys() + listOf(entry.syncKey).filter(String::isNotBlank)
+        write(rows, removed)
+        return rows
+    }
+
+    private fun removedKeys() = prefs.getStringSet(removedField,emptySet()).orEmpty().toSet()
+
+    @Synchronized private fun prepare(): Pair<List<ReaderTarget>, Set<String>> {
+        val local = load().map { if (it.syncKey.isBlank()) it.copy(syncKey = java.util.UUID.randomUUID().toString()) else it }
+        val removed = removedKeys()
+        write(local,removed)
+        return local to removed
+    }
+
+    suspend fun synchronize(online: OnlineBook, book: Publication): List<ReaderTarget> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val (local, removed) = prepare()
+        val pending = local.filterNot { it.synced }
+        val remote = online.catalog.syncBookmarks(online.detail,book,pending,removed)
+        synchronized(this@ReaderBookmarks) {
+            val currentRemovals = removedKeys()
+            val outstanding = load().filter { row -> !row.synced && pending.none { it.syncKey == row.syncKey } }
+            val combined = outstanding + remote.filterNot { it.syncKey in currentRemovals }
+            write(combined,currentRemovals - removed)
+            combined
+        }
+    }
+
+    private fun write(rows: List<ReaderTarget>, removed: Set<String>) {
         val json = JSONArray()
         rows.forEach { row -> json.put(JSONObject().put("chapter", row.chapter).put("cfi", row.cfi)
-            .put("anchor", row.anchor).put("label", row.label).put("offset", row.offset)) }
-        prefs.edit().putString(field, json.toString()).apply()
+            .put("anchor", row.anchor).put("label", row.label).put("offset", row.offset)
+            .put("audioMs", row.audioMs).put("syncKey", row.syncKey).put("synced", row.synced)) }
+        prefs.edit().putString(field, json.toString()).putStringSet(removedField,removed).apply()
     }
 }
 

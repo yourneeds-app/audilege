@@ -206,7 +206,7 @@ internal object AudilegePlayback {
     }
 
     fun start(context: Context, book: OpenBook, index: Int, anchor: String?, resumeSaved: Boolean, bridge: ReadingSync?,
-        cfi: String? = null, serverSeconds: Double? = null) {
+        cfi: String? = null, serverSeconds: Double? = null, elapsedMs: Int? = null) {
         if (index !in book.publication.spine.indices) return
         this.context = context.applicationContext
         if (listeningStats == null) listeningStats = ListeningStats(context.applicationContext)
@@ -227,7 +227,7 @@ internal object AudilegePlayback {
         }
         playing = true
         if (!requestService()) return
-        openChapter(index, anchor, resumeSaved, cfi, serverSeconds = serverSeconds)
+        openChapter(index, anchor, resumeSaved, cfi, elapsedOverride = elapsedMs, serverSeconds = serverSeconds)
     }
 
     private fun openChapter(index: Int, anchor: String?, resumeSaved: Boolean, cfi: String? = null, elapsedOverride: Int? = null,
@@ -518,12 +518,12 @@ internal object AudilegePlayback {
 
     fun chapterBy(delta: Int) = stepChapter(delta, completed = false)
 
-    fun selectChapter(index: Int, anchor: String?) {
+    fun selectChapter(index: Int, anchor: String?, elapsedMs: Int? = null) {
         val book = activeBook?.publication ?: return
         if (index !in book.spine.indices) return
         rememberPosition()
         checkpoint()
-        openChapter(index, anchor, false)
+        openChapter(index, anchor, false, elapsedOverride = elapsedMs)
     }
 
     private fun stepChapter(direction: Int, completed: Boolean) {

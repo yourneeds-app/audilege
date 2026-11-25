@@ -83,13 +83,14 @@ internal fun ReaderSearchDialog(book: Publication, open: (ReaderTarget) -> Unit,
 
 @Composable
 internal fun ReaderBookmarksDialog(book: Publication, marks: List<ReaderTarget>, add: () -> Unit,
-    open: (ReaderTarget) -> Unit, remove: (ReaderTarget) -> Unit, dismiss: () -> Unit) {
+    open: (ReaderTarget) -> Unit, remove: (ReaderTarget) -> Unit, pending: Boolean, retry: () -> Unit, dismiss: () -> Unit) {
     AlertDialog(onDismissRequest = dismiss, title = { Text(stringResource(R.string.reader_bookmarks)) },
         confirmButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.close)) } },
         text = {
             AppVolumeFeedback()
             Column {
                 TextButton(onClick = add) { Text(stringResource(R.string.reader_add_mark)) }
+                if (pending) TextButton(onClick = retry) { Text(stringResource(R.string.reader_marks_retry)) }
                 if (marks.isEmpty()) Text(stringResource(R.string.reader_no_marks))
                 LazyColumn(Modifier.heightIn(max = 380.dp)) {
                     items(marks) { mark ->

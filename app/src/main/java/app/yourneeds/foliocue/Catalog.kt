@@ -139,14 +139,25 @@ internal class Catalog(private val profile: Profile, password: String) : Library
     }
 }
 
-internal fun savePublication(stream: InputStream, destination: File): File {
+internal fun savePublication(
+    stream: InputStream, destination: File, replaceExisting: Boolean = true, checkTransfer: () -> Unit = {},
+): File {
     destination.parentFile?.mkdirs()
     val partial = File.createTempFile("download-", ".part", destination.parentFile)
     try {
-        partial.outputStream().use { out -> stream.copyTo(out) }
+        partial.outputStream().use { out ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                checkTransfer()
+                val count = stream.read(buffer)
+                if (count < 0) break
+                out.write(buffer, 0, count)
+            }
+        }
         Publication(partial)
-        java.nio.file.Files.move(partial.toPath(), destination.toPath(),
-            java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        checkTransfer()
+        val options = if (replaceExisting) arrayOf(java.nio.file.StandardCopyOption.REPLACE_EXISTING) else emptyArray()
+        java.nio.file.Files.move(partial.toPath(), destination.toPath(), *options)
         return destination
     } finally { partial.delete() }
 }

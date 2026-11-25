@@ -354,6 +354,9 @@ internal fun SettingsScreen(
     val adaptive = watchPreference(prefs, setOf("coverAccent")) { prefs.getBoolean("coverAccent", true) }
     val skip = watchPreference(prefs, setOf("skipSeconds")) { prefs.getInt("skipSeconds", 15) }
     val resumeRewind = watchPreference(prefs, setOf("resumeRewindSeconds")) { prefs.getInt("resumeRewindSeconds", 0) }
+    val podcastDownloads = watchPreference(display, setOf(PodcastDownloadJob.ENABLED)) {
+        display.getBoolean(PodcastDownloadJob.ENABLED, false)
+    }
     val language = watchPreference(display, setOf("language")) { display.getString("language", "").orEmpty() }
     fun open(url: String) {
         browserFailed = runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isFailure
@@ -398,6 +401,12 @@ internal fun SettingsScreen(
                         rewindOptions.indexOf(resumeRewind).coerceAtLeast(0),
                     ) { prefs.edit().putInt("resumeRewindSeconds", rewindOptions[it]).apply() }
                     AudiobookEqualizerSetting(prefs)
+                }
+                SettingsGroup(R.string.shelf_podcasts, expanded == R.string.shelf_podcasts, { expand(R.string.shelf_podcasts) }) {
+                    ToggleRow(R.string.podcast_wifi_download, podcastDownloads) { enabled ->
+                        display.edit().putBoolean(PodcastDownloadJob.ENABLED, enabled).apply()
+                        PodcastDownloadJob.schedule(context, enabled, checkNow = enabled)
+                    }
                 }
                 SettingsGroup(R.string.language, expanded == R.string.language, { expand(R.string.language) }) {
                     val options = listOf("", "de", "en")

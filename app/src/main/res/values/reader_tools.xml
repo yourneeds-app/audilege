@@ -17,4 +17,6 @@
     <string name="reader_remote_place">On server · %1$s · %2$s</string>
     <string name="reader_time_unknown">Time unknown</string>
     <string name="reader_here">Current chapter</string>
+    <string name="reader_marks_retry">Retry bookmark sync</string>
+    <string name="podcast_wifi_download">Download new episodes over Wi-Fi</string>
 </resources>

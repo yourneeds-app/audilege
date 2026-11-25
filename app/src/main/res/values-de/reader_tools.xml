@@ -17,4 +17,6 @@
     <string name="reader_remote_place">Auf dem Server · %1$s · %2$s</string>
     <string name="reader_time_unknown">Zeit unbekannt</string>
     <string name="reader_here">Aktuelles Kapitel</string>
+    <string name="reader_marks_retry">Lesezeichen erneut abgleichen</string>
+    <string name="podcast_wifi_download">Neue Folgen über WLAN laden</string>
 </resources>

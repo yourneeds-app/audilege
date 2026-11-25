@@ -1,5 +1,6 @@
 package app.yourneeds.foliocue
 
+import android.net.Network
 import java.io.File
 import java.io.InputStream
 import java.net.HttpURLConnection
@@ -38,6 +39,8 @@ internal class OrbitCatalog(
         sessionLocks.getOrPut("$api:${profile.id}:${profile.user}") { Any() }
     }
     @Volatile var supportsSharedQueue = false
+        private set
+    @Volatile var supportsSharedBookmarks = false
         private set
     @Volatile private var groupedProgress: Boolean? = null
     override val statisticsIdentity: String = keyOf("${profile.api}\n${profile.user}")
@@ -112,6 +115,7 @@ internal class OrbitCatalog(
             .put("sort", JSONArray().put(JSONObject().put("field", "title").put("dir", "asc")))
         val response = json(profile.catalog, body, token)
         supportsSharedQueue = response.optBoolean("sharedQueue")
+        supportsSharedBookmarks = response.optBoolean("sharedBookmarks")
         val items = response.getJSONArray("items")
         val entries = items.objects().mapNotNull { book ->
             val files = book.optJSONArray("files")
@@ -227,6 +231,45 @@ internal class OrbitCatalog(
 
     fun download(book: OrbitBook, destination: File): File = withSession { token ->
         request(URI("$api/books/files/${book.fileId}/download"), null, token) { savePublication(it, destination) }
+    }
+
+    fun newestPodcasts(network: Network): List<CatalogEntry> = withSession { token ->
+        request(URI("$api/podcasts/autodownload"), null, token, network = network) { stream ->
+            JSONObject(stream.bufferedReader(Charsets.UTF_8).readText()).getJSONArray("items").objects().mapNotNull { book ->
+                val edition = preferredEpubFile(book.getJSONArray("files")) ?: return@mapNotNull null
+                catalogEntry(book, edition, edition, null)
+            }.toList()
+        }
+    }
+
+    fun downloadPodcast(fileId: Long, destination: File, network: Network, checkTransfer: () -> Unit): File =
+        withSession { token ->
+            request(URI("$api/books/files/$fileId/download"), null, token, network = network) {
+                savePublication(it, destination, replaceExisting = false, checkTransfer = checkTransfer)
+            }
+        }
+
+    fun syncBookmarks(detail: OrbitBook, book: Publication, pending: List<ReaderTarget>, removed: Set<String>): List<ReaderTarget> = withSession { token ->
+        val url = URI("$api/books/${detail.id}/bookmarks?fileId=${detail.fileId}")
+        val additions = JSONArray()
+        pending.forEach { mark ->
+            val cfi = mark.cfi?.let { "epubcfi(/${book.packageSpineStep}/${(mark.chapter + 1) * 2}!$it)" }
+            additions.put(JSONObject().put("key",mark.syncKey).put("chapter",mark.chapter)
+                .put("offset",0).put("cfi",cfi).put("anchor",mark.anchor)
+                .put("audio_ms",mark.audioMs).put("label",mark.label))
+        }
+        val changes = if (pending.isEmpty() && removed.isEmpty()) null else
+            JSONObject().put("add",additions).put("remove",JSONArray(removed))
+        json(url,changes,token).getJSONArray("marks").objects().mapNotNull { mark ->
+            val chapter = mark.optInt("chapter",-1)
+            if (chapter !in book.spine.indices) return@mapNotNull null
+            ReaderTarget(chapter,
+                cfi = mark.optString("cfi").takeIf { it.startsWith("epubcfi(") && '!' in it }?.substringAfter('!')?.removeSuffix(")"),
+                anchor = mark.optString("anchor").takeIf { !mark.isNull("anchor") && it.isNotBlank() },
+                label = mark.optString("label"),
+                audioMs = mark.optInt("audio_ms",-1).takeIf { it >= 0 },
+                syncKey = mark.getString("key"), synced = true)
+        }
     }
 
     fun queue(action: String? = null, bookId: Long? = null, remove: Boolean = false): List<QueueTitle> = withSession { token ->
@@ -423,9 +466,10 @@ internal class OrbitCatalog(
 
         private fun <T> request(
             url: URI, body: JSONObject?, token: String?, method: String = if (body == null) "GET" else "POST",
-            read: (InputStream) -> T,
+            network: Network? = null, read: (InputStream) -> T,
         ): T {
-            val connection = url.toURL().openConnection() as HttpURLConnection
+            val target = url.toURL()
+            val connection = (network?.openConnection(target) ?: target.openConnection()) as HttpURLConnection
             try {
                 connection.instanceFollowRedirects = false
                 connection.useCaches = false
