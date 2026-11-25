@@ -20,7 +20,7 @@
     <string name="auth_error">OPDS access was denied. Check the credentials and permissions in BookOrbit.</string>
     <string name="setup_error">Check the server address and make sure OPDS is enabled.</string>
     <string name="book_error">Could not open the file as an EPUB.</string>
-    <string name="audio_error">Could not play the embedded audio track.</string>
+    <string name="audio_error">This chapter could not be played.</string>
     <string name="catalog_error">Could not load the catalog.</string>
     <string name="contents">Contents</string>
     <string name="settings">Appearance</string>
@@ -106,7 +106,7 @@
     <string name="offline_confirm">Remove the copy from this device?</string>
     <string name="sync_status">Reading position synced</string>
     <string name="sync_pending">Reading position saved on this device. Server sync pending.</string>
-    <string name="sync_conflict">The reading position changed on another device.</string>
+    <string name="sync_conflict">This device and the server have different positions.</string>
     <string name="sync_remote">Use server position</string>
     <string name="sync_local">Use this position</string>
     <string name="sync_unavailable">Reading position sync unavailable</string>

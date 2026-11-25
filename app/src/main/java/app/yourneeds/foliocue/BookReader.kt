@@ -169,6 +169,7 @@ internal fun BookReader(
     }
 
     fun stagePlayback() {
+        if (playback.failed || playback.loading) return
         val active = playback.activeBook?.takeIf { it.file == file } ?: return
         stage(active.publication.progressPayload(playback.chapter, null, playback.anchor, playback.fraction, true, active.mode))
     }
@@ -651,7 +652,10 @@ internal fun BookReader(
                         if (attached && playback.failed) playback.resume()
                     }) { Text(stringResource(R.string.narration_retry)) }
                 } else if (audioError) {
-                    Text(stringResource(R.string.audio_error), Modifier.padding(horizontal = 16.dp))
+                    Column(Modifier.padding(horizontal = 16.dp)) {
+                        Text(stringResource(R.string.audio_error), style = MaterialTheme.typography.bodyMedium)
+                        TextButton(onClick = playback::resume) { Text(stringResource(R.string.narration_retry)) }
+                    }
                 } else if (mode == Mode.Listen && jump == null &&
                     (if (attached) playback.noNarration else readyAudio != null && readyAudio.index == null)) {
                     Text(stringResource(R.string.no_further_narration), Modifier.padding(horizontal = 16.dp))

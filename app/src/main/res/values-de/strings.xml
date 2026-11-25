@@ -20,7 +20,7 @@
     <string name="auth_error">Der OPDS-Zugang wurde abgelehnt. Prüfe die Zugangsdaten und die Freigabe in BookOrbit.</string>
     <string name="setup_error">Prüfe die Serveradresse und ob OPDS aktiviert ist.</string>
     <string name="book_error">Die Datei konnte nicht als EPUB geöffnet werden.</string>
-    <string name="audio_error">Die eingebettete Tonspur konnte nicht abgespielt werden.</string>
+    <string name="audio_error">Das Kapitel konnte nicht abgespielt werden.</string>
     <string name="catalog_error">Der Katalog konnte nicht geladen werden.</string>
     <string name="contents">Inhalt</string>
     <string name="settings">Ansicht</string>
@@ -106,7 +106,7 @@
     <string name="offline_confirm">Kopie von diesem Gerät entfernen?</string>
     <string name="sync_status">Lesestand abgeglichen</string>
     <string name="sync_pending">Lesestand auf diesem Gerät gespeichert. Serverabgleich ausstehend.</string>
-    <string name="sync_conflict">Der Lesestand hat sich auf einem anderen Gerät geändert.</string>
+    <string name="sync_conflict">Gerät und Server haben unterschiedliche Positionen.</string>
     <string name="sync_remote">Serverstand übernehmen</string>
     <string name="sync_local">Diesen Stand übernehmen</string>
     <string name="sync_unavailable">Lesestand-Abgleich nicht verfügbar</string>

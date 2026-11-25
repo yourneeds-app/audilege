@@ -546,6 +546,7 @@ internal object AudilegePlayback {
 
     private fun checkpoint(syncNow: Boolean = false, wasPlaying: Boolean = playing) {
         flushListeningStats()
+        if (failed || loading) return
         val book = activeBook ?: return
         val engine = narration ?: return
         val key = keyOf(book.file.absolutePath)
