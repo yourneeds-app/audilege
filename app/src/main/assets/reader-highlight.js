@@ -1,8 +1,8 @@
 (() => {
     const boundaries = new WeakMap();
     const key = 'audilege-sentence';
-    let previous = null;
-    let companions = new Map(), activeCompanions = [];
+    let activeRange = null;
+    let companions = new Map(), marked = new Set();
     window.audilegeTimedWords = ids => {
         const timed = new Set(ids);
         companions = new Map();
@@ -53,6 +53,7 @@
         if (!hit) return false;
         const part = segments.containing(hit.from);
         if (!part) return false;
+        if (activeRange?.block === block && activeRange.start === part.index) return true;
         const end = part.index + part.segment.length;
         const first = nodes.find(n => n.to > part.index), last = nodes.find(n => n.to >= end);
         if (!first || !last) return false;
@@ -60,22 +61,24 @@
         range.setStart(first.node, part.index - first.from);
         range.setEnd(last.node, end - last.from);
         CSS.highlights.set(key, new Highlight(range));
+        activeRange = {block, start: part.index};
         return true;
     }
 
     window.audilegeHighlight = (id, sentence, follow) => {
         const word = id ? document.getElementById(id) : null;
         const target = word && sentence ? sourceSentence(word) : word;
-        globalThis.CSS?.highlights?.delete(key);
-        const next = target || (word && !markRange(word) ? word : null);
-        for (const node of activeCompanions) node.classList.remove('foliocue-current');
-        activeCompanions = !sentence && word ? companions.get(word.id) || [] : [];
-        for (const node of activeCompanions) node.classList.add('foliocue-current');
-        if (previous !== next) {
-            previous?.classList.remove('foliocue-current');
-            next?.classList.add('foliocue-current');
-            previous = next;
+        const usesRange = sentence && !target && word && markRange(word);
+        if (!usesRange && activeRange) {
+            CSS.highlights.delete(key);
+            activeRange = null;
         }
+        const next = new Set();
+        if (!usesRange && word) next.add(target || word);
+        if (!sentence && word) for (const node of companions.get(word.id) || []) next.add(node);
+        for (const node of marked) if (!next.has(node)) node.classList.remove('foliocue-current');
+        for (const node of next) if (!marked.has(node)) node.classList.add('foliocue-current');
+        marked = next;
         if (!word || !follow) return;
         const box = word.getBoundingClientRect(), margin = Math.min(60, innerHeight * 0.18);
         if (box.top < margin || box.bottom > innerHeight - margin) {

@@ -471,6 +471,7 @@ internal class Narration(
     var finished = false
         private set
     private var highlighted: String? = null
+    private var highlightPositionMs = 0
 
     init { tonePrefs.registerOnSharedPreferenceChangeListener(toneListener) }
 
@@ -587,6 +588,7 @@ internal class Narration(
         timeline.seek(point.index)
         startMs = point.mediaMs
         finished = false
+        highlightPositionMs = 0
         mark(null)
         if (audio != oldAudio) {
             closePlayer()
@@ -616,10 +618,15 @@ internal class Narration(
             }
             CueAdvance.SEEK -> {
                 startMs = timeline.cue.start
+                highlightPositionMs = 0
                 mark(null)
                 seekPlayer()
             }
-            CueAdvance.CONTINUE -> mark(timeline.fragmentAt(position, delayMs))
+            CueAdvance.CONTINUE -> {
+                // The platform media clock can briefly report a backwards step between polls.
+                highlightPositionMs = maxOf(highlightPositionMs, position)
+                mark(timeline.fragmentAt(highlightPositionMs, delayMs))
+            }
         }
         return false
     }
@@ -641,6 +648,7 @@ internal class Narration(
             try { current.removeOnRoutingChangedListener(routed) } catch (_: RuntimeException) { }
         }
         current?.release()
+        highlightPositionMs = 0
         ended = false
         prepared = false
         seeking = false

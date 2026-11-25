@@ -1,5 +1,7 @@
 package app.yourneeds.foliocue
 
+private const val BRIEF_HIGHLIGHT_GAP_MS = 150
+
 internal enum class CueAdvance { CONTINUE, NEXT_TRACK, SEEK, FINISHED }
 
 internal class CueTimeline(private val cues: List<Cue>, restoredIndex: Int) {
@@ -26,7 +28,14 @@ internal class CueTimeline(private val cues: List<Cue>, restoredIndex: Int) {
         while (target < cues[at].start && at > 0 && continuous(at - 1, at)) at--
         while (target >= visibleEnd(at) && at < cues.lastIndex && continuous(at, at + 1)) at++
         val clip = cues[at]
-        return clip.fragment.takeIf { target >= clip.start && target < visibleEnd(at) }
+        if (target >= clip.start && target < visibleEnd(at)) return clip.fragment
+        // Keep the previous mark through short gaps between words on the same track.
+        if (at > 0 && target < clip.start && continuous(at - 1, at)) {
+            val previousEnd = visibleEnd(at - 1)
+            if (target >= previousEnd && clip.start - previousEnd <= BRIEF_HIGHLIGHT_GAP_MS)
+                return cues[at - 1].fragment
+        }
+        return null
     }
 
     private fun visibleEnd(at: Int): Int {

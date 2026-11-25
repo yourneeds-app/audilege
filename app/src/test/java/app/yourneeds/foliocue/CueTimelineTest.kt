@@ -12,7 +12,7 @@ class CueTimelineTest {
         assertEquals("first",timeline.fragmentAt(50))
         assertEquals(CueAdvance.CONTINUE,timeline.advance(260,false))
         assertEquals("second",timeline.fragmentAt(260))
-        assertNull(timeline.fragmentAt(500))
+        assertEquals("second", timeline.fragmentAt(500))
     }
     @Test fun sameTrackGapDoesNotSeekOrShowNextWordEarly() {
         val timeline = CueTimeline(listOf(
@@ -29,6 +29,19 @@ class CueTimelineTest {
         assertEquals("two", timeline.fragmentAt(610))
         assertEquals(CueAdvance.CONTINUE, timeline.advance(650, false))
         assertEquals("three", timeline.fragmentAt(650))
+    }
+
+    @Test fun briefGapKeepsItsMarkUntilTheNextWordButNeverAcrossTracks() {
+        val timeline = CueTimeline(listOf(
+            Cue("first", "a", 0, 200),
+            Cue("second", "a", 240, 360),
+            Cue("third", "b", 380, 440),
+        ), 0)
+        assertEquals(CueAdvance.CONTINUE, timeline.advance(210, false))
+        assertEquals("first", timeline.fragmentAt(210))
+        assertEquals("first", timeline.fragmentAt(239))
+        assertEquals("second", timeline.fragmentAt(240))
+        assertNull(timeline.fragmentAt(365))
     }
 
     @Test fun adjustsTheHighlightWithoutChangingThePlayingCueOrCrossingTracks() {
@@ -56,7 +69,7 @@ class CueTimelineTest {
         assertEquals("second", timeline.fragmentAt(250))
         assertEquals("first", timeline.fragmentAt(250, 25))
         assertEquals(CueAdvance.CONTINUE, timeline.advance(330, false))
-        assertNull(timeline.fragmentAt(330))
+        assertEquals("second", timeline.fragmentAt(330))
         assertEquals("third", timeline.fragmentAt(360))
     }
 
