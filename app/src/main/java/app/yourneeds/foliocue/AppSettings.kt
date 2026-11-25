@@ -347,6 +347,7 @@ internal fun SettingsScreen(
     val display = remember(context) { context.getSharedPreferences("display", Context.MODE_PRIVATE) }
     var expanded by rememberSaveable { mutableIntStateOf(if (updates.available != null) R.string.updates else 0) }
     var accessDialog by remember { mutableStateOf(false) }
+    var showNotices by rememberSaveable { mutableStateOf(false) }
     var input by remember { mutableStateOf("") }
     var browserFailed by remember { mutableStateOf(false) }
     val mode = watchPreference(prefs, setOf("appTheme")) { prefs.getInt("appTheme", 0).coerceIn(0, 2) }
@@ -408,6 +409,13 @@ internal fun SettingsScreen(
                         }
                     }
                 }
+                SettingsGroup(R.string.info_licenses, expanded == R.string.info_licenses, { expand(R.string.info_licenses) }) {
+                    TextButton(onClick = { showNotices = true }) { Text(stringResource(R.string.route_licenses)) }
+                    TextButton(onClick = { open(RELEASES.substringBefore("/releases")) }) { Text("GitHub") }
+                    TextButton(onClick = { open("$RELEASES/tag/v${updates.installed}") }) {
+                        Text(stringResource(R.string.current_version, updates.installed))
+                    }
+                }
                 SettingsGroup(R.string.updates, expanded == R.string.updates, { expand(R.string.updates) }) {
                     Text(stringResource(R.string.current_version, updates.installed))
                     val last = if (updates.lastCheck > 0) DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
@@ -438,6 +446,7 @@ internal fun SettingsScreen(
             }
         }
     }
+    if (showNotices) AirPlayNotices { showNotices = false }
     if (accessDialog) AlertDialog(onDismissRequest = { accessDialog = false; input = "" },
         title = { Text(stringResource(R.string.design_private_access)) },
         text = {

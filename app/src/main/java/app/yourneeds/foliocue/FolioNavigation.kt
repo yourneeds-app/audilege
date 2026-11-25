@@ -84,6 +84,15 @@ internal fun FolioDrawer(
                     icon = item.icon?.let { drawable -> { Icon(painterResource(drawable), null) } },
                     onClick = { scope.launch { drawer.close(); item.action() } })
             }
+            if (brand && bottomItem != null) {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val version = remember(context) {
+                    context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
+                }
+                TextButton(onClick = { scope.launch { drawer.close(); bottomItem.action() } }) {
+                    Text("Audilege $version", style = MaterialTheme.typography.labelSmall)
+                }
+            }
             }
         }
     }) {

@@ -87,7 +87,6 @@ private fun ListenOutputChooser(dismiss: () -> Unit) {
     }
     var attempt by remember { mutableIntStateOf(0) }
     var searched by remember { mutableStateOf(false) }
-    var notices by remember { mutableStateOf(false) }
     var switcherUnavailable by remember { mutableStateOf(false) }
     var systemUnavailable by remember { mutableStateOf(false) }
     val systemRoute = activeSystemRoute(context)
@@ -96,8 +95,8 @@ private fun ListenOutputChooser(dismiss: () -> Unit) {
     val connecting = player.connectingOutput
     val choices = discovery.speakers
 
-    DisposableEffect(discovery, supported, lifecycle, notices) {
-        if (supported == true && !notices) {
+    DisposableEffect(discovery, supported, lifecycle) {
+        if (supported == true) {
             fun update() {
                 if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) discovery.acquire(owner)
                 else discovery.release(owner)
@@ -108,13 +107,9 @@ private fun ListenOutputChooser(dismiss: () -> Unit) {
             onDispose { lifecycle.removeObserver(observer); discovery.release(owner) }
         } else onDispose { }
     }
-    LaunchedEffect(attempt, supported, notices) {
+    LaunchedEffect(attempt, supported) {
         searched = false
-        if (supported == true && !notices) { delay(2500); searched = true }
-    }
-    if (notices) {
-        AirPlayNotices { notices = false }
-        return
+        if (supported == true) { delay(2500); searched = true }
     }
     ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         AppVolumeFeedback()
@@ -184,7 +179,6 @@ private fun ListenOutputChooser(dismiss: () -> Unit) {
                         R.string.route_system_picker else R.string.route_bluetooth_settings))
                 }
                 if (systemUnavailable) Text(stringResource(R.string.route_system_unavailable), color = MaterialTheme.colorScheme.error)
-                TextButton(onClick = { notices = true }) { Text(stringResource(R.string.route_licenses)) }
             }
         }
     }
@@ -203,7 +197,7 @@ private fun RouteOption(name: String, detail: String?, selected: Boolean, enable
 }
 
 @Composable
-private fun AirPlayNotices(back: () -> Unit) {
+internal fun AirPlayNotices(back: () -> Unit) {
     val assets = LocalContext.current.assets
     val directory = "airplay-licenses"
     val names by produceState<List<String>?>(null, assets) {
