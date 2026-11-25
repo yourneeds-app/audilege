@@ -193,6 +193,9 @@ internal class OrbitCatalog(
         val title = book.optString("title").ifBlank { book.optJSONObject("metadata")?.optString("title").orEmpty() }
         return CatalogEntry(title.ifBlank { "#$id" }, URI("$api/books/$id"), true, author(book),
             editionFileId = edition, primaryFileId = primary, readingPercent = percent, category = book.optString("category"),
+            series = book.optJSONObject("metadata")?.optString("series").orEmpty(),
+            volume = book.optJSONObject("metadata")?.optString("volume").orEmpty(),
+            companionId = book.optLong("companionId").takeIf { it > 0 },
             resumeMode = when (book.optString("resumeMode")) {
                 "listen" -> Mode.Listen
                 "along" -> Mode.Follow
@@ -219,6 +222,12 @@ internal class OrbitCatalog(
 
     fun download(book: OrbitBook, destination: File): File = withSession { token ->
         request(URI("$api/books/files/${book.fileId}/download"), null, token) { savePublication(it, destination) }
+    }
+
+    fun companionEntry(id: Long): CatalogEntry? = withSession { token ->
+        val book = json(URI("$api/books/$id"), null, token)
+        val file = preferredEpubFile(book.getJSONArray("files"))
+        catalogEntry(book, file, file, null)
     }
 
     fun details(url: URI, resumeEpubFileId: Long? = null): OrbitBook = withSession { token ->

@@ -8,6 +8,7 @@ import android.text.format.Formatter
 import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -140,9 +141,15 @@ internal fun LibraryTile(item: ShelfItem, covers: CoverStore, list: Boolean, ena
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(item.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
                     maxLines = if (list) 4 else 2, overflow = TextOverflow.Ellipsis)
-                if (item.author.isNotBlank()) Text(item.author, style = MaterialTheme.typography.bodySmall,
+                if (item.author.isNotBlank()) Text(item.author,
+                    modifier = item.authorAction?.let { if (enabled) Modifier.clickable(role = Role.Button, onClick = it) else Modifier } ?: Modifier,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = if (list) 2 else 1,
                     overflow = TextOverflow.Ellipsis)
+                if (item.series.isNotBlank()) Text(listOf(item.series,item.volume).filter(String::isNotBlank).joinToString(" · "),
+                    modifier = item.seriesAction?.let { if (enabled) Modifier.clickable(role = Role.Button, onClick = it) else Modifier } ?: Modifier,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (item.caption.isNotBlank()) Text(item.caption, style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -162,12 +169,13 @@ internal fun LibraryTile(item: ShelfItem, covers: CoverStore, list: Boolean, ena
 @Composable
 internal fun DetailScreen(
     book: BookDetail, covers: CoverStore, prefs: SharedPreferences, busy: Boolean, problem: Int?, storageRevision: Int,
-    close: () -> Unit, open: (Mode, Boolean) -> Unit, download: () -> Unit, remove: () -> Unit,
+    close: () -> Unit, openCompanion: (CatalogEntry) -> Unit, browseAuthor: (String) -> Unit,
+    browseSeries: (String) -> Unit, open: (Mode, Boolean) -> Unit, download: () -> Unit, remove: () -> Unit,
 ) {
     val context = LocalContext.current
     val online = book.onlineBook
     val publication = book.publication
-    val title = publication?.title ?: book.entry.title
+    val title = book.entry.title.ifBlank { publication?.title.orEmpty() }
     val author = online?.detail?.author.orEmpty().ifBlank { publication?.author.orEmpty() }.ifBlank { book.entry.author }
     val rawDescription = online?.detail?.description.orEmpty().ifBlank { publication?.description.orEmpty() }
     val description = remember(rawDescription) { Html.fromHtml(rawDescription, Html.FROM_HTML_MODE_COMPACT).toString().trim() }
@@ -177,7 +185,9 @@ internal fun DetailScreen(
     val sectionIndex = prefs.getInt("$key.chapter",0)
     val hasAudio = publication?.spine?.any { it.overlay.isNotBlank() } == true
     val podcast = book.entry.category == "podcast"
-    var choice by remember(book, started) { mutableStateOf(if (podcast) Mode.Listen else savedMode(prefs, book.localFile, publication)) }
+    val audioOnly = book.entry.category == "audio" || podcast
+    val series = book.entry.series.ifBlank { online?.detail?.series.orEmpty() }
+    var choice by remember(book, started) { mutableStateOf(if (audioOnly) Mode.Listen else savedMode(prefs, book.localFile, publication)) }
     var confirm by remember(book) { mutableStateOf(false) }
     val coverKey = book.coverKey
     val loadCover: () -> InputStream? = {
@@ -200,8 +210,12 @@ internal fun DetailScreen(
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold)
-                            if (author.isNotBlank()) Text(author, style = MaterialTheme.typography.titleMedium)
-                            online?.detail?.series?.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.shelf_series, it)) }
+                            if (author.isNotBlank()) Text(author,
+                                Modifier.clickable(enabled = !busy && !podcast, role = Role.Button) { browseAuthor(author) },
+                                style = MaterialTheme.typography.titleMedium)
+                            if (series.isNotBlank()) Text(series,
+                                Modifier.clickable(enabled = !busy, role = Role.Button) { browseSeries(series) },
+                                color = MaterialTheme.colorScheme.primary)
                             online?.detail?.pages?.takeIf { it > 0 }?.let { Text(stringResource(R.string.shelf_pages, it), style = MaterialTheme.typography.bodySmall) }
                             online?.detail?.narrator?.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.shelf_narrator, it), style = MaterialTheme.typography.bodySmall) }
                             if (publication != null) Text(stringResource(if (podcast) R.string.shelf_podcasts else if (hasAudio) R.string.shelf_audio else R.string.shelf_plain), style = MaterialTheme.typography.labelMedium)
@@ -209,6 +223,14 @@ internal fun DetailScreen(
                     }
                 }
                 HorizontalDivider()
+                book.companion?.let { alternate ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val otherLabel = if (alternate.category == "audio") R.string.shelf_audio_category else R.string.shelf_ebooks
+                        val currentLabel = if (audioOnly) R.string.shelf_audio_category else R.string.shelf_ebooks
+                        FilterChip(true, {}, { Text(stringResource(currentLabel)) })
+                        FilterChip(false, { openCompanion(alternate) }, { Text(stringResource(otherLabel)) }, enabled = !busy)
+                    }
+                }
                 if (publication != null) {
                     val chapter = sectionIndex.coerceIn(publication.spine.indices)
                     val label = publication.contents.firstOrNull { it.path == publication.spine[chapter].path }?.label
@@ -220,7 +242,7 @@ internal fun DetailScreen(
                         Spacer(Modifier.width(8.dp))
                         Text(stringResource(modeAction(choice, started)))
                     }
-                    if (hasAudio && !podcast) Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (hasAudio && !audioOnly) Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf(Mode.Read to R.string.shelf_read, Mode.Listen to R.string.shelf_listen, Mode.Follow to R.string.shelf_follow).forEach { (item, text) ->
                             val picked = item == choice
                             Surface(Modifier.weight(1f), shape = MaterialTheme.shapes.medium, color = if (picked) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer) {

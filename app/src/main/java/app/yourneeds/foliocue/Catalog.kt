@@ -54,6 +54,7 @@ internal data class CatalogEntry(
     val primaryFileId: Long? = null, val readingPercent: Double? = null,
     val category: String = "", val added: Long? = null,
     val showKey: String = "", val showTitle: String = "",
+    val series: String = "", val volume: String = "", val companionId: Long? = null,
     val resumeMode: Mode? = null, val resumeChapter: Int? = null, val updated: Long? = null,
 )
 internal data class CatalogPage(val entries: List<CatalogEntry>, val next: URI?)

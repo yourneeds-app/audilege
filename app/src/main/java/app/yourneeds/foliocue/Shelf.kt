@@ -38,7 +38,9 @@ internal enum class ShelfTab(val label: Int, val icon: Int) {
 
 internal data class ShelfItem(val key: String, val title: String, val author: String,
     val cover: () -> InputStream?, val open: () -> Unit, val caption: String = "", val category: String = "", val added: Long? = null,
-    val showKey: String = "", val showTitle: String = "")
+    val showKey: String = "", val showTitle: String = "", val series: String = "", val volume: String = "",
+    val bookId: Long? = null, val companionId: Long? = null, val authorAction: (() -> Unit)? = null,
+    val seriesAction: (() -> Unit)? = null)
 
 internal data class RecentBook(val item: ShelfItem, val mode: Mode, val chapter: String, val fraction: Float?)
 
@@ -127,7 +129,8 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
     sort: Int, setSort: (Int) -> Unit, category: String, setCategory: (String) -> Unit,
     list: Boolean, setList: (Boolean) -> Unit, openMenu: () -> Unit, more: (() -> Unit)?, seeAll: () -> Unit,
     header: @Composable () -> Unit, empty: @Composable () -> Unit, query: String, setQuery: (String) -> Unit,
-    showKey: String, openPodcasts: (String) -> Unit, importEpub: () -> Unit) {
+    showKey: String, openPodcasts: (String) -> Unit, importEpub: () -> Unit,
+    facetAuthor: String, facetSeries: String, clearFacet: () -> Unit) {
     val canSearch = tab == ShelfTab.Home || tab == ShelfTab.Library
     var search by rememberSaveable(tab) { mutableStateOf(false) }
     var sortMenu by remember { mutableStateOf(false) }
@@ -141,20 +144,26 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
     val canFilter = tab == ShelfTab.Library || tab == ShelfTab.Discover
     val podcastView = canFilter && category == "podcast"
     val show = shows.firstOrNull { showKey.isNotEmpty() && it.showKey == showKey }
-    LaunchedEffect(tab, query, sort, category, showKey) { grid.scrollToItem(0) }
-    val visible = remember(items, query, sort, category, tab, showKey, home) {
+    LaunchedEffect(tab, query, sort, category, showKey, facetAuthor, facetSeries) { grid.scrollToItem(0) }
+    val visible = remember(items, query, sort, category, tab, showKey, home, facetAuthor, facetSeries) {
         val filtered = items.filter { (!canFilter || category.isEmpty() || it.category == category) &&
             (!podcastView || showKey.isEmpty() || it.showKey == showKey) &&
             (!home || it.category != "podcast") &&
+            (facetAuthor.isEmpty() || it.author.equals(facetAuthor, true)) &&
+            (facetSeries.isEmpty() || it.series.equals(facetSeries, true)) &&
             (it.title.contains(query, true) || it.author.contains(query, true) || it.showTitle.contains(query, true)) }
         val alphabet = compareBy<ShelfItem, String>(String.CASE_INSENSITIVE_ORDER) { it.title }
-        filtered.sortedWith(when (if (home) 0 else sort) {
+        val visibleEbooks = filtered.filter { it.category == "ebook" }.mapNotNull { it.bookId }.toSet()
+        val grouped = filtered.filterNot { it.category == "audio" && it.companionId in visibleEbooks }
+        val ordering = when (if (home) 0 else sort) {
             0 -> compareByDescending<ShelfItem> { it.added }.then(alphabet)
             1 -> compareBy<ShelfItem> { it.added == null }.thenBy { it.added }.then(alphabet)
             3 -> alphabet.reversed()
             4 -> compareBy<ShelfItem,String>(String.CASE_INSENSITIVE_ORDER) { it.author }.then(alphabet)
             else -> alphabet
-        })
+        }
+        grouped.sortedWith(if (facetSeries.isBlank()) ordering else
+            compareBy<ShelfItem> { it.volume.replace(',', '.').toDoubleOrNull() ?: Double.MAX_VALUE }.then(ordering))
     }
     Column(Modifier.fillMaxSize().statusBarsPadding().displayCutoutPadding()) {
         FolioBar(stringResource(if (tab == ShelfTab.Discover) R.string.shelf_categories else tab.label), openMenu, brand = tab == ShelfTab.Home) {
@@ -195,6 +204,10 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                             }
                         }
                     }
+                }
+                if (facetAuthor.isNotEmpty() || facetSeries.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                    InputChip(true, clearFacet, { Text(facetSeries.ifEmpty { facetAuthor }) },
+                        trailingIcon = { Icon(Icons.Default.Close, stringResource(R.string.close)) })
                 }
                 if (home && recent.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
                     ContinueReading(recent, covers, !busy)

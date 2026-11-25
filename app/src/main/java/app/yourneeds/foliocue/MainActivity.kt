@@ -71,6 +71,7 @@ internal data class OpenBook(
 )
 internal data class BookDetail(
     val entry: CatalogEntry, val onlineBook: OnlineBook?, val localFile: File, val publication: Publication?,
+    val companion: CatalogEntry? = null,
     val preferLocal: Boolean = false, val coverKey: String = localFile.absolutePath, val coverLoader: (() -> InputStream?)? = null,
 )
 private data class CatalogScreen(val title: String, val url: URI, val page: CatalogPage)
@@ -96,6 +97,8 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
     var tab by rememberSaveable { mutableStateOf(ShelfTab.Home) }
     var shelfSort by rememberSaveable { mutableStateOf(display.getInt("shelf.order", 0)) }
     var category by rememberSaveable { mutableStateOf("") }
+    var facetAuthor by rememberSaveable { mutableStateOf("") }
+    var facetSeries by rememberSaveable { mutableStateOf("") }
     var libraryCategory by rememberSaveable { mutableStateOf("") }
     var podcastShow by rememberSaveable { mutableStateOf("") }
     var podcastOrder by rememberSaveable { mutableStateOf(display.getInt("podcast.order", 0)) }
@@ -177,8 +180,13 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                     OfflineBooks.associate(readerPrefs,file,online.detail)
                     OfflineBooks.rememberPodcast(readerPrefs,file,entry)
                 }
+                val companion = entry.companionId?.let { id ->
+                    history.asSequence().flatMap { it.page.entries.asSequence() }
+                        .firstOrNull { it.url.path.substringAfterLast('/').toLongOrNull()==id }
+                        ?: runCatching { orbit?.companionEntry(id) }.getOrNull()
+                }
                 BookDetail(entry,online,file,online?.let { it.catalog.publication(it.detail,entry.title) }
-                    ?: file.takeIf(File::isFile)?.let(::Publication), coverKey = coverKey(entry), coverLoader = { cover(entry) })
+                    ?: file.takeIf(File::isFile)?.let(::Publication), companion = companion, coverKey = coverKey(entry), coverLoader = { cover(entry) })
             }
             details = detail
             if (resumeIn != null && detail.publication != null) opened = withContext(Dispatchers.IO) {
@@ -196,10 +204,19 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
     fun navigate(target: ShelfTab) {
         if (target == ShelfTab.Home && history.size > 1) history = history.take(1)
         podcastShow = ""
+        facetAuthor = ""
+        facetSeries = ""
         query = ""
         details = null
         problem = null
         tab = target
+    }
+    fun browseFacet(author: String = "", series: String = "") {
+        navigate(ShelfTab.Library)
+        libraryCategory = ""
+        if (history.size > 1) history = history.take(1)
+        facetAuthor = author
+        facetSeries = series
     }
     fun openPodcasts(show: String) {
         if (tab == ShelfTab.Library) libraryCategory = "podcast" else {
@@ -348,7 +365,10 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                     history = history + CatalogScreen(entry.title,entry.url,page)
                 }
             }, category = entry.category, added = entry.added, showKey = entry.showKey.ifBlank { entry.showTitle.ifBlank { entry.author } },
-                showTitle = entry.showTitle.ifBlank { entry.author })
+                showTitle = entry.showTitle.ifBlank { entry.author }, series = entry.series, volume = entry.volume,
+                bookId = if (entry.book) entry.url.path.substringAfterLast('/').toLongOrNull() else null, companionId = entry.companionId,
+                authorAction = entry.author.takeIf { entry.book && entry.category != "podcast" && it.isNotBlank() }?.let { name -> { browseFacet(author = name) } },
+                seriesAction = entry.series.takeIf(String::isNotBlank)?.let { name -> { browseFacet(series = name) } })
         }
         val duplicateCopies = remember(current,library,catalog,storageRevision) {
             val remoteEntries = current?.page?.entries.orEmpty().filter { it.book }
@@ -387,6 +407,9 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
             key(d.localFile) {
                 DetailScreen(d,covers,readerPrefs,busy,problem,storageRevision,
                     close = { details = null; problem = null },
+                    openCompanion = { showDetails(it) },
+                    browseAuthor = { browseFacet(author = it) },
+                    browseSeries = { browseFacet(series = it) },
                     open = { mode,offline -> openDetail(d,mode,offline) },
                     download = {
                         perform(R.string.book_error) {
@@ -506,7 +529,9 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                                                 }
                                                 if (tab != ShelfTab.Library) OutlinedButton(onClick = { startImport() }) { Text(stringResource(R.string.shelf_local_import)) }
                                             }
-                                        },query = query,setQuery = { query = it })
+                                        },query = query,setQuery = { query = it },
+                                        facetAuthor = facetAuthor, facetSeries = facetSeries,
+                                        clearFacet = { facetAuthor = ""; facetSeries = "" })
                                 }
                             }
                             if (detail != null) {
