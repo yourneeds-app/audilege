@@ -687,6 +687,9 @@ internal fun BookReader(
                     },
                     onContents = { dialog = R.string.contents },
                     pages = pages.takeIf { pageMode },
+                    audioAfterChapterMs = if (mode == Mode.Listen && book.spine.size > 1)
+                        book.narrationAfter(if (attached) playback.chapter else location.index) else null,
+                    onUndoJump = if (mode == Mode.Listen && attached && playback.canUndoJump) playback::undoJump else null,
                     onSpeed = { dialog = R.string.speed },
                     onRepeat = if (mode == Mode.Follow && chapterCues.isNotEmpty()) ::repeatSentence else null,
                     onPlay = {

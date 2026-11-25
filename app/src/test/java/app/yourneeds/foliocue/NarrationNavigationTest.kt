@@ -8,7 +8,7 @@ class NarrationNavigationTest {
     private val requests = mutableListOf<String>()
     private var offline = false
 
-    private fun publication(): Publication {
+    private fun publication(withDuration: Boolean = false): Publication {
         val overlays = listOf("", "empty", "spokenA", "", "spokenB", "")
         val items = overlays.mapIndexed { i, id ->
             """<item id="p$i" href="p$i.xhtml" media-type="application/xhtml+xml" media-overlay="$id"/>"""
@@ -17,7 +17,8 @@ class NarrationNavigationTest {
             """<item id="$it" href="$it.smil" media-type="application/smil+xml"/>"""
         }
         val spine = overlays.indices.joinToString("") { """<itemref idref="p$it"/>""" }
-        val opf = """<package><manifest>$items$smils<item id="audio" href="100% Narration.mp3" media-type="audio/mpeg"/></manifest><spine>$spine</spine></package>"""
+        val duration = if (withDuration) """<metadata><meta property="media:duration" refines="#spokenB">2s</meta></metadata>""" else ""
+        val opf = """<package>$duration<manifest>$items$smils<item id="audio" href="100% Narration.mp3" media-type="audio/mpeg"/></manifest><spine>$spine</spine></package>"""
         fun clips(page: Int) = """<smil><body><par><text src="p$page.xhtml#word"/><audio src="100%25%20Narration.mp3" clipBegin="0" clipEnd="2s"/></par></body></smil>"""
         return Publication("Fixture", { path ->
             requests += path
@@ -55,6 +56,14 @@ class NarrationNavigationTest {
         offline = false
         assertEquals(2, book.findNarratedSection(0, 1))
         assertEquals(2, requests.count { it == "spokenA.smil" })
+    }
+
+    @Test fun remainingAudioUsesKnownDurationsWithoutFetchingUnplayedChapters() {
+        assertNull(publication().narrationAfter(2))
+        val book = publication(withDuration = true)
+        assertEquals(2000L, book.narrationAfter(2))
+        assertEquals(0L, book.narrationAfter(4))
+        assertFalse(requests.any { it.endsWith(".smil") })
     }
 
     @Test fun resolvesLiteralAndEncodedFilenamesWithoutRelaxingResourceBoundaries() {

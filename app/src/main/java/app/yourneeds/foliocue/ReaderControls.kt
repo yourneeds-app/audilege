@@ -27,7 +27,7 @@ import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
-private fun clockLabel(ms: Int): String {
+private fun clockLabel(ms: Long): String {
     val seconds = ms / 1000
     return if (seconds >= 3600) String.format(Locale.ROOT, "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60)
     else String.format(Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60)
@@ -123,7 +123,7 @@ internal fun ReaderDock(
     playing: Boolean, loading: Boolean, audioAvailable: Boolean, onPrevious: () -> Unit,
     onNext: () -> Unit, onContents: () -> Unit, onSpeed: () -> Unit, onPlay: () -> Unit,
     onRepeat: (() -> Unit)? = null,
-    pages: Pair<Int, Int>? = null,
+    pages: Pair<Int, Int>? = null, audioAfterChapterMs: Long? = null, onUndoJump: (() -> Unit)? = null,
 ) {
     Surface(color = if (mode == Mode.Listen) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth()) {
@@ -133,14 +133,29 @@ internal fun ReaderDock(
                     var drag by remember(chapter) { mutableStateOf<Float?>(null) }
                     val duration = progress?.durationMs ?: previewDurationMs
                     val position = drag?.roundToInt() ?: progress?.elapsedMs ?: 0
+                    val remaining = (duration - position).coerceAtLeast(0)
+                    val remainingAtSpeed = (remaining / speed.toDouble()).toLong()
                     val label = stringResource(R.string.track_progress)
                     Slider(value = position.toFloat().coerceIn(0f,duration.toFloat()), onValueChange = { drag = it },
                         onValueChangeFinished = { drag?.let { AudilegePlayback.seekTo(it.roundToInt()) }; drag = null },
                         modifier = Modifier.fillMaxWidth().semantics { contentDescription = label },
                         valueRange = 0f..duration.coerceAtLeast(1).toFloat(),enabled = progress != null && duration > 0 && !loading)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(if (duration > 0) clockLabel(position) else "–:––",style = MaterialTheme.typography.labelMedium)
-                        Text(if (duration > 0) clockLabel(duration) else "–:––",style = MaterialTheme.typography.labelMedium)
+                        Text(if (duration > 0) clockLabel(position.toLong()) else "–:––",style = MaterialTheme.typography.labelMedium)
+                        Text(if (duration > 0) stringResource(R.string.audio_chapter_remaining, clockLabel(remainingAtSpeed))
+                            else "–:––", style = MaterialTheme.typography.labelMedium)
+                    }
+                    if ((audioAfterChapterMs != null && duration > 0) || onUndoJump != null) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            if (audioAfterChapterMs != null && duration > 0) {
+                                val bookRemaining = ((audioAfterChapterMs + remaining) / speed.toDouble()).toLong()
+                                Text(stringResource(R.string.audio_book_remaining, clockLabel(bookRemaining)),
+                                    Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                            } else Spacer(Modifier.weight(1f))
+                            if (onUndoJump != null) TextButton(onClick = onUndoJump) {
+                                Text(stringResource(R.string.audio_undo_jump))
+                            }
+                        }
                     }
                     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically) {

@@ -266,6 +266,18 @@ internal class Publication(
         return cues
     }
 
+    /** Remaining audio after this chapter without downloading additional overlays. */
+    fun narrationAfter(index: Int): Long? = synchronized(sectionStarts) {
+        var remaining = 0L
+        for (i in index + 1 until spine.size) {
+            val overlay = spine[i].overlay
+            if (overlay.isEmpty()) continue
+            if (overlay in sharedOverlays) return null
+            remaining += overlayDurations[overlay] ?: return null
+        }
+        remaining
+    }
+
     /** BookOrbit counts elapsed clip durations across all sections, independent of per-track timestamps. */
     fun narrationSeconds(index: Int, anchor: String): Double? = synchronized(sectionStarts) {
         val within = sectionStarts[spine[index].path]?.get(anchor) ?: return null

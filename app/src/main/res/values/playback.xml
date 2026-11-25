@@ -11,4 +11,7 @@
     <string name="audio_chapter_end">End of chapter</string>
     <string name="audio_minutes">%1$d min</string>
     <string name="audio_off">Off</string>
+    <string name="audio_chapter_remaining">Chapter left %1$s</string>
+    <string name="audio_book_remaining">Book left %1$s</string>
+    <string name="audio_undo_jump">Undo jump</string>
 </resources>

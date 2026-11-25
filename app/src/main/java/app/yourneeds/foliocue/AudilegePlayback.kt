@@ -470,10 +470,28 @@ internal object AudilegePlayback {
         return true
     }
 
-    fun seekTo(elapsedMs: Int) {
+    private var previousPosition by mutableStateOf<Pair<Int, Int>?>(null)
+    val canUndoJump: Boolean get() = previousPosition != null && !loading
+
+    private fun rememberPosition() {
+        if (failed || loading) return
+        progress?.let { previousPosition = chapter to it.elapsedMs }
+    }
+
+    fun undoJump() {
+        val (previousChapter, elapsed) = previousPosition ?: return
+        if (loading) return
+        previousPosition = null
+        if (previousChapter == chapter && !failed) seekTo(elapsed, remember = false)
+        else openChapter(previousChapter, null, false, elapsedOverride = elapsed)
+    }
+
+    fun seekTo(elapsedMs: Int, remember: Boolean = true) {
         val engine = narration ?: return
         if (failed || loading) return
         val opened = activeBook ?: return
+        val current = engine.progress()
+        if (remember && elapsedMs.coerceIn(0, current.durationMs) != current.elapsedMs) rememberPosition()
         rewindOnPlay = false
         replayUntilMs = 0
         sampleListeningStats(SystemClock.elapsedRealtime())
@@ -485,7 +503,7 @@ internal object AudilegePlayback {
         service?.refresh(force = true)
     }
 
-    fun skip(direction: Int) = seekTo((progress?.elapsedMs ?: 0) + direction * skipSeconds * 1000)
+    fun skip(direction: Int) = seekTo((progress?.elapsedMs ?: 0) + direction * skipSeconds * 1000, remember = false)
 
     fun canChapterBy(direction: Int): Boolean {
         val book = activeBook?.publication ?: return false
@@ -502,6 +520,7 @@ internal object AudilegePlayback {
     fun selectChapter(index: Int, anchor: String?) {
         val book = activeBook?.publication ?: return
         if (index !in book.spine.indices) return
+        rememberPosition()
         checkpoint()
         openChapter(index, anchor, false)
     }
@@ -512,6 +531,7 @@ internal object AudilegePlayback {
             if (completed) pause()
             return
         }
+        if (!completed) rememberPosition()
         checkpoint()
         val start = chapter + direction
         if (!listenMode) {
@@ -620,6 +640,7 @@ internal object AudilegePlayback {
         sync = null
         readerVisible = false
         activeBook = null
+        previousPosition = null
         startPending = false
         playing = false
         failed = false
