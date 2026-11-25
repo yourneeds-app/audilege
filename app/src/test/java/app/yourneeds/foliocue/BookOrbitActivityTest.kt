@@ -34,6 +34,19 @@ class BookOrbitActivityTest {
     private fun amount(account: JSONObject, kind: String? = null) =
         listeningSummary(serverActivityData(account, kind), date, 1).total
 
+    @Test fun mergedServerHistoryReplacesCatalogOnlySnapshots() {
+        val day = date.toString()
+        val listen = JSONObject().put("days", JSONObject().put(day, 27000))
+        val read = JSONObject().put("days", JSONObject().put(date.minusDays(1).toString(), 6000))
+        val account = JSONObject().put("overview", JSONObject().put("audilegeActivities",
+            JSONObject().put("listen", listen).put("read", read)))
+        account.put("serverBooks", JSONObject().put("41", listen))
+        assertEquals(33000L, amount(account))
+        assertEquals(27000L, amount(account, "listen"))
+        assertEquals(0L, amount(account, "tts"))
+        assertEquals(setOf(date.minusDays(1), date), accountActiveDays(account))
+    }
+
     @Test fun allServerTypesAndUnknownHistoryAreImportedButNotMisclassified() {
         val server = Server()
         listOf("read", "listen", "tts", null).forEachIndexed { index, kind ->

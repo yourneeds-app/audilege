@@ -21,7 +21,7 @@ class OrbitCatalogTest {
                     socket.soTimeout = 5000
                     val input = socket.getInputStream().bufferedReader(Charsets.UTF_8)
                     val start = input.readLine().split(' ')
-                    val route = start[1].substringAfter("/api/v1/")
+                    val route = start[1].removePrefix("/medien/audilege/api/v1/")
                     val headers = generateSequence { input.readLine()?.takeIf(String::isNotEmpty) }
                         .associate { it.substringBefore(':').lowercase() to it.substringAfter(':').trim() }
                     val auth = headers["authorization"]
@@ -59,7 +59,7 @@ class OrbitCatalogTest {
             }
         }
         try {
-            val profile = Profile(label = "Test", server = "http://127.0.0.1:${server.localPort}",
+            val profile = Profile(label = "Test", server = "http://127.0.0.1:${server.localPort}/medien/audilege/",
                 user = "reader", localHttp = true, accountLogin = true)
             val login = OrbitCatalog.signIn(profile, "fixture-password")
             var stored = ""
@@ -76,6 +76,13 @@ class OrbitCatalogTest {
             server.close()
             worker.join(1000)
         }
+    }
+
+    @Test
+    fun schoolHostAcceptsExplicitLocalHttpAndKeepsItsPort() {
+        val profile = Profile(label = "Schule", server = "http://audilege.local:8472/",
+            user = "reader", localHttp = true, accountLogin = true)
+        assertEquals(URI("http://audilege.local:8472/api/v1/books/query"), profile.catalog)
     }
 
     @Test

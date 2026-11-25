@@ -53,6 +53,12 @@ internal fun addActivityWindow(data: JSONObject, bookId: Long, title: String, au
 /** Rebuild only from fetched server snapshots. Old local totals and pending uploads are never mixed in. */
 internal fun serverActivityData(account: JSONObject, kind: String? = null): JSONObject {
     val data = JSONObject()
+    // Audilege Server includes Audiobookshelf imports, even for titles outside the local catalogue.
+    account.optJSONObject("overview")?.optJSONObject("audilegeActivities")?.let { activities ->
+        if (kind != null) return activities.optJSONObject(kind) ?: data
+        activities.keys().forEach { mode -> mergeStatistics(data, activities.getJSONObject(mode)) }
+        return data
+    }
     account.objectAt("serverBooks").let { books -> books.keys().forEach { key ->
         val snapshot = books.getJSONObject(key)
         val selected = if (kind == null) snapshot else snapshot.optJSONObject("activities")?.optJSONObject(kind)
