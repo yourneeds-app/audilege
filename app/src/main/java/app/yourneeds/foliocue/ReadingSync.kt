@@ -100,6 +100,7 @@ private fun retainedText(server: JSONObject, previous: JSONObject?, candidate: J
 /** Text updates leave narration to the server. Resending an older marker would undo another device's listening. */
 internal fun writePayload(candidate: JSONObject, latest: JSONObject): JSONObject {
     val payload = JSONObject().put("source", candidate.optString("source", "text"))
+    if (latest.has("resumeMode") && candidate.has("resumeMode")) payload.put("resumeMode", candidate.getString("resumeMode"))
     val narration = payload.optString("source") == "narration"
     val legacy = !latest.has("textUpdatedAt") && !latest.has("narrationUpdatedAt")
     val fields = if (narration) locatorFields else textFields
@@ -306,10 +307,11 @@ internal enum class SyncState(val label: Int) {
     Synced(R.string.sync_status), Pending(R.string.sync_pending), Conflict(R.string.sync_conflict), Unavailable(R.string.sync_unavailable),
 }
 
-internal fun Publication.progressPayload(chapter: Int, cfi: String?, anchor: String?, fraction: Double, narration: Boolean): JSONObject? {
+internal fun Publication.progressPayload(chapter: Int, cfi: String?, anchor: String?, fraction: Double, narration: Boolean, mode: Mode? = null): JSONObject? {
     if (chapter !in spine.indices || (cfi == null && (anchor == null || !narration)) || !fraction.isFinite()) return null
     val percentage = (100.0 * (chapter + fraction.coerceIn(0.0, 1.0)) / spine.size).coerceIn(0.0, 100.0)
     val payload = JSONObject().put("source", if (narration) "narration" else "text").put("percentage", percentage)
+    if (mode != null) payload.put("resumeMode", when(mode) { Mode.Listen -> "listen"; Mode.Follow -> "along"; Mode.Read -> "read" })
     val currentCfi = if (narration) narratedCfi(chapter, anchor) ?: cfi else cfi
     if (currentCfi != null) payload.put("cfi", "epubcfi(/$packageSpineStep/${(chapter + 1) * 2}!$currentCfi)")
     if (narration && anchor != null) {

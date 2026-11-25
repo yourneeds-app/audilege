@@ -53,9 +53,9 @@ private fun collectEditions(
             if (book <= 0 || edition <= 0) return@forEach
             val url = URI("$api/books/$book")
             val current = byUrl[url]
-            val entry = CatalogEntry(current?.title ?: record.optString("title"), url, true,
-                current?.author ?: record.optString("author"), editionFileId = edition,
-                primaryFileId = current?.primaryFileId ?: record.optLong("primary").takeIf { it > 0 })
+            val entry = current?.copy(editionFileId = edition) ?: CatalogEntry(record.optString("title"), url, true,
+                record.optString("author"), editionFileId = edition,
+                primaryFileId = record.optLong("primary").takeIf { it > 0 })
             addRemote(entry, false, record.optInt("sections"))
         }
         // Older installations stored only the last streamed title. Other known editions can be recovered from the catalog.
@@ -123,9 +123,10 @@ internal fun continueReadingBooks(
     }
     val ordered = remember(editions, dashboard, revision, last) {
         // Local additions have device timestamps. The server supplies the order of its own editions.
-        val (remote, local) = editions.partition { it.fromDashboard }
-        local.sortedWith(compareByDescending<ShelfEdition> { reader.getLong("${it.key}.shelfOpenedAt", 0) }
-            .thenByDescending { it.file.name == last }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.local?.publication?.title ?: it.entry?.title.orEmpty() }) + remote
+        editions.sortedByDescending {
+            val localTime = reader.getLong("${it.key}.shelfOpenedAt", if (it.file.name == last) 1L else 0L)
+            maxOf(localTime, it.entry?.updated ?: 0L)
+        }
     }
     val shown = HashSet<String>()
     return buildList {
@@ -139,21 +140,31 @@ internal fun continueReadingBooks(
             val percent = if (serverPosition) entry?.readingPercent?.toFloat() else
                 reader.getFloat("$id.shelfPercent", -1f).takeIf { it in 0f..100f }
             val index = reader.getInt("$id.chapter", 0)
-            val olderPosition = index > 0 || reader.getInt("$id.scroll.$index", 0) > 0 ||
+            val olderPosition = index > 0 || reader.getInt("$id.scroll.$index", 0).let { it > 0 || it < -1 } ||
                 reader.getInt("$id.elapsed.$index", 0) > 0 || reader.getInt("$id.cue.$index", 0) > 0
             if (percent == 100f || ((percent ?: 0f) <= 0f && !olderPosition)) continue
             if (!shown.add(entry?.url?.toString() ?: edition.file.absolutePath)) continue
             val publication = edition.local?.publication
-            val mode = if (publication == null && !reader.contains("$id.mode")) Mode.Read else savedMode(reader, edition.file, publication)
-            val item = ShelfItem(edition.file.absolutePath, publication?.title ?: entry?.title.orEmpty(),
+            val mode = entry?.resumeMode?.takeIf { serverPosition } ?: when {
+                entry?.category in listOf("audio", "podcast") -> Mode.Listen
+                reader.contains("$id.mode") || publication != null -> savedMode(reader, edition.file, publication)
+                entry?.category == "audilege" -> Mode.Follow
+                else -> Mode.Read
+            }
+            val item = ShelfItem(edition.file.absolutePath + if (mode == Mode.Listen) "#audio" else "", publication?.title ?: entry?.title.orEmpty(),
                 publication?.author ?: entry?.author.orEmpty(), {
-                    publication?.cover?.let(publication::open) ?: entry?.let(cover)
+                    val audio = if (mode == Mode.Listen) {
+                        publication?.audiobookCover?.let(publication::open) ?: entry?.url?.path?.substringAfterLast('/')?.toLongOrNull()?.let { id ->
+                            runCatching { orbit?.audiobookCover(id) }.getOrNull()
+                        }
+                    } else null
+                    audio ?: publication?.cover?.let(publication::open) ?: entry?.let(cover)
                 }, { resume(edition.local, entry, mode) })
             val showLocalChapter = !serverPosition || reader.getFloat("$id.shelfPercent", -1f) == percent
             val knownChapter = showLocalChapter && (reader.contains("$id.chapter") || reader.contains("$id.shelfChapterIndex"))
             val label = if (knownChapter && reader.getInt("$id.shelfChapterIndex", -1) == index)
                 reader.getString("$id.shelfChapter", null) else null
-            val chapter = label ?: if (knownChapter && index in 0 until edition.sections)
+            val chapter = if (serverPosition && entry?.resumeChapter != null) stringResource(R.string.shelf_chapter, entry.resumeChapter) else label ?: if (knownChapter && index in 0 until edition.sections)
                 stringResource(R.string.shelf_section, index + 1, edition.sections) else ""
             add(RecentBook(item, mode, chapter, percent?.div(100f) ?:
                 if (index > 0 && edition.sections > 0) index.toFloat() / edition.sections else null))

@@ -46,4 +46,11 @@
     <string name="sort_old">Älteste zuerst</string>
     <string name="sort_az">Titel A–Z</string>
     <string name="sort_za">Titel Z–A</string>
+    <string name="shelf_start">Start</string>
+    <string name="home_last_read">Zuletzt gelesen</string>
+    <string name="home_last_listen">Zuletzt gehört</string>
+    <string name="home_last_follow">Zuletzt mitgelesen</string>
+    <string name="home_started">Auch angefangen</string>
+    <string name="home_new">Neu im Regal</string>
+    <string name="home_podcasts">Deine Podcasts</string>
 </resources>

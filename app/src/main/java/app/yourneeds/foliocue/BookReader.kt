@@ -170,7 +170,7 @@ internal fun BookReader(
 
     fun stagePlayback() {
         val active = playback.activeBook?.takeIf { it.file == file } ?: return
-        stage(active.publication.progressPayload(playback.chapter, null, playback.anchor, playback.fraction, true))
+        stage(active.publication.progressPayload(playback.chapter, null, playback.anchor, playback.fraction, true, active.mode))
     }
 
     fun startAudio() {

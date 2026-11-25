@@ -128,11 +128,11 @@ internal fun SystemBarAppearance(activity: MainActivity) {
 internal fun FolioBar(
     title: String, openMenu: (() -> Unit)? = null, back: (() -> Unit)? = null,
     overflow: List<MenuItem> = emptyList(), backEnabled: Boolean = true,
-    backLabel: Int = R.string.back, actions: @Composable RowScope.() -> Unit = {},
+    backLabel: Int = R.string.back, brand: Boolean = false, actions: @Composable RowScope.() -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
     TopAppBar(
-        title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        title = { if (brand) AudilegeWordmark(Modifier.width(100.dp)) else Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         navigationIcon = {
             if (back != null) IconButton(onClick = back, enabled = backEnabled) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(backLabel))

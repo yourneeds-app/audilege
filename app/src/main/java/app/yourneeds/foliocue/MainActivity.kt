@@ -93,7 +93,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
     val covers = remember { CoverStore() }
     var profiles by remember { mutableStateOf(store.list()) }
     var selected by remember { mutableStateOf(profiles.firstOrNull { it.id == display.getString("profile", null) }) }
-    var tab by rememberSaveable { mutableStateOf(ShelfTab.Library) }
+    var tab by rememberSaveable { mutableStateOf(ShelfTab.Home) }
     var shelfSort by rememberSaveable { mutableStateOf(display.getInt("shelf.order", 0)) }
     var category by rememberSaveable { mutableStateOf("") }
     var podcastShow by rememberSaveable { mutableStateOf("") }
@@ -190,6 +190,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
             preferLocal = true, coverLoader = { publication.cover?.let(publication::open) })
     }
     fun navigate(target: ShelfTab) {
+        if (target == ShelfTab.Home && history.size > 1) history = history.take(1)
         podcastShow = ""
         query = ""
         details = null
@@ -206,7 +207,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
         selected = profile
         display.edit().putString("profile",profile?.id).apply()
         history = emptyList()
-        navigate(ShelfTab.Library)
+        navigate(ShelfTab.Home)
         reload++
     }
     LaunchedEffect(selected, reload) {
@@ -239,14 +240,14 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
         form = true
         problem = null
     }
-    BackHandler(enabled = !form && !busy && opened == null && (statistics || settings || details != null || tab != ShelfTab.Library || history.size > 1)) {
+    BackHandler(enabled = !form && !busy && opened == null && (statistics || settings || details != null || tab != ShelfTab.Home || history.size > 1)) {
         when {
             statistics -> statistics = false
             settings -> settings = false
             details != null -> { details = null; problem = null }
             podcastShow.isNotEmpty() -> podcastShow = ""
             history.size > 1 && tab != ShelfTab.Downloads && tab != ShelfTab.Profile -> history = history.dropLast(1)
-            else -> navigate(ShelfTab.Library)
+            else -> navigate(ShelfTab.Home)
         }
     }
 
@@ -320,7 +321,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
             return@MaterialTheme
         }
 
-        val current = history.lastOrNull().takeIf { tab == ShelfTab.Library || tab == ShelfTab.Discover }
+        val current = history.lastOrNull().takeIf { tab == ShelfTab.Home || tab == ShelfTab.Library || tab == ShelfTab.Discover }
         val local = library.map { item ->
             val entry = OfflineBooks.localEntry(readerPrefs, item.file, item.publication)
             val caption = if (tab == ShelfTab.Downloads) stringResource(R.string.shelf_offline_size,
@@ -335,6 +336,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                 else perform(R.string.catalog_error) {
                     val page = withContext(Dispatchers.IO) { requireNotNull(catalog).page(entry.url) }
                     query = ""
+                    if (tab == ShelfTab.Home) tab = ShelfTab.Library
                     history = history + CatalogScreen(entry.title,entry.url,page)
                 }
             }, category = entry.category, added = entry.added, showKey = entry.showKey.ifBlank { entry.showTitle.ifBlank { entry.author } },
@@ -349,7 +351,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
             }.map { it.file.absolutePath }.toSet()
         }
         val items = (remote + local.filterNot { it.key in duplicateCopies }).distinctBy { it.key }
-        val recent = if (tab == ShelfTab.Library && query.isBlank()) key(folder, catalog) {
+        val recent = if (tab == ShelfTab.Home && query.isBlank()) key(folder, catalog) {
             val entries = remember(history) { history.flatMap { it.page.entries } }
             continueReadingBooks(readerPrefs, display, streams, folder, library, entries, selected, orbit, reload, ::cover) { localBook, entry, mode ->
                 if (localBook != null) {
@@ -407,6 +409,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
             }
         }
         FolioDrawer(stringResource(R.string.app),listOfNotNull(
+            MenuItem(R.string.shelf_start, selected = tab == ShelfTab.Home, icon = R.drawable.shelf_start) { navigate(ShelfTab.Home) },
             MenuItem(R.string.shelf_home, selected = tab == ShelfTab.Library, icon = R.drawable.shelf_book) { navigate(ShelfTab.Library) },
             MenuItem(R.string.shelf_categories, selected = tab == ShelfTab.Discover && category != "podcast", icon = R.drawable.shelf_grid) { category = ""; navigate(ShelfTab.Discover) },
             if (history.any { screen -> screen.page.entries.any { it.category == "podcast" } })
@@ -456,7 +459,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                                     category, { category = it; podcastShow = "" }, list,
                                     showKey = podcastShow, openPodcasts = ::openPodcasts,
                                     setList = { list = it; display.edit().putBoolean("shelf.list",it).apply() },
-                                    openMenu = menu,more = more,seeAll = { category = ""; navigate(ShelfTab.Discover) },
+                                    openMenu = menu,more = more,seeAll = { category = ""; navigate(ShelfTab.Library) },
                                     header = {
                                         Column {
                                             updates.available?.let { release -> TextButton(onClick = { settings = true }) {
@@ -476,7 +479,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                                         }
                                     },empty = {
                                         if (!catalogLoading || tab == ShelfTab.Downloads) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                            if (selected == null && tab == ShelfTab.Library && query.isBlank()) {
+                                            if (selected == null && tab == ShelfTab.Home && query.isBlank()) {
                                                 AudilegeWordmark(Modifier.padding(vertical = 8.dp).widthIn(max = 218.dp).fillMaxWidth())
                                             }
                                             Text(stringResource(when { tab == ShelfTab.Downloads -> R.string.shelf_empty_downloads

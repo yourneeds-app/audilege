@@ -27,6 +27,7 @@ private fun JSONObject.flatPosition(fileId: Long): JSONObject {
     if (percent !in 0.0..100.0) throw IOException("Invalid BookOrbit percentage")
     val flat = JSONObject().put("percentage", percent).put("updatedAt", get("updatedAt"))
         .put("koreaderProgress", get("koreader"))
+    if (has("resumeMode")) flat.put("resumeMode", get("resumeMode"))
     groups.forEach { (name, fields) ->
         val group = getJSONObject(name)
         fields.forEach { (wire, local) -> flat.put(local, group.get(wire)) }
@@ -56,6 +57,7 @@ internal fun groupedProgressWrite(fileId: Long, body: JSONObject, previous: JSON
         .put("percentage", body.getDouble("percentage"))
     // The server rejects our write if another reader saved since the GET. Use the server's
     // last update, never the phone's wall clock. An untouched row has no timestamp yet.
+    if (previous.has("resumeMode") && body.has("resumeMode")) write.put("resumeMode", body.getString("resumeMode"))
     write.put("editedAt", if (previous.isNull("updatedAt")) "1970-01-01T00:00:00.000Z" else previous.getString("updatedAt"))
     groups.forEach { (name, fields) ->
         val group = JSONObject()

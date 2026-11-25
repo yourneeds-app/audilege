@@ -4,6 +4,8 @@ Audilege is an Android reader and audiobook player for Audilege Server and [Book
 
 [Download the latest Android release](https://github.com/yourneeds-app/audilege/releases/latest)
 
+Home shows your most recent title with its cover, progress and last reading or listening mode. The shortcuts below open other titles in progress, recent additions and podcast shows. The Library tab opens the full shelf.
+
 ## Getting started
 
 - In **Read** mode, the arrows, a horizontal swipe or a tap near either edge turn one screen-sized page. Tap the chapter and page number to open the contents. **Aa** lets you switch to scrolling.

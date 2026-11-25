@@ -1,6 +1,13 @@
 package app.yourneeds.foliocue
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.text.font.FontFamily
+import kotlin.math.roundToInt
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.*
@@ -22,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import java.io.InputStream
 
 internal enum class ShelfTab(val label: Int, val icon: Int) {
+    Home(R.string.shelf_start, R.drawable.shelf_start),
     Library(R.string.shelf_home, R.drawable.shelf_book),
     Discover(R.string.shelf_discover, R.drawable.shelf_discover),
     Downloads(R.string.downloads, R.drawable.shelf_download),
@@ -37,7 +45,7 @@ internal data class RecentBook(val item: ShelfItem, val mode: Mode, val chapter:
 @Composable
 internal fun ShelfTabs(tab: ShelfTab, enabled: Boolean, onSelect: (ShelfTab) -> Unit) {
     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-        listOf(ShelfTab.Library, ShelfTab.Downloads).forEach { target ->
+        listOf(ShelfTab.Home, ShelfTab.Library, ShelfTab.Downloads).forEach { target ->
             NavigationBarItem(tab == target, { onSelect(target) }, enabled = enabled,
                 icon = { Icon(painterResource(target.icon), null) }, label = {
                     Text(stringResource(target.label), maxLines = 2, style = MaterialTheme.typography.labelSmall)
@@ -49,7 +57,7 @@ internal fun ShelfTabs(tab: ShelfTab, enabled: Boolean, onSelect: (ShelfTab) -> 
 @Composable
 internal fun ShelfRail(tab: ShelfTab, enabled: Boolean, onSelect: (ShelfTab) -> Unit) {
     NavigationRail(containerColor = MaterialTheme.colorScheme.surface) {
-        listOf(ShelfTab.Library, ShelfTab.Downloads).forEach { target ->
+        listOf(ShelfTab.Home, ShelfTab.Library, ShelfTab.Downloads).forEach { target ->
             NavigationRailItem(tab == target, { onSelect(target) }, enabled = enabled,
                 icon = { Icon(painterResource(target.icon), null) },
                 label = { Text(stringResource(target.label), style = MaterialTheme.typography.labelSmall) })
@@ -58,42 +66,61 @@ internal fun ShelfRail(tab: ShelfTab, enabled: Boolean, onSelect: (ShelfTab) -> 
 }
 
 @Composable
-private fun ResumeCard(book: RecentBook, covers: CoverStore, enabled: Boolean, modifier: Modifier) {
-    val item = book.item
-    Surface(onClick = item.open, enabled = enabled, shape = AudilegeLayout.cardShape,
-        color = MaterialTheme.colorScheme.secondaryContainer, modifier = modifier) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            BookCover(item.title, covers, item.key, item.cover, Modifier.width(62.dp).aspectRatio(.71f))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                val line = listOf(item.author, book.chapter).filter(String::isNotBlank).joinToString(" Â· ")
-                if (line.isNotEmpty()) Text(line, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(painterResource(modeIcon(book.mode)), null, Modifier.size(16.dp))
-                    Text(stringResource(book.mode.label), style = MaterialTheme.typography.labelMedium)
+private fun ContinueReading(books: List<RecentBook>, covers: CoverStore, enabled: Boolean) {
+    val lead = books.first()
+    val item = lead.item
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        CoverTheme(covers, item.key, item.cover) {
+            val accent = MaterialTheme.colorScheme.primary
+            val base = lerp(accent, Color(0xff101d21), .63f)
+            Surface(onClick = item.open, enabled = enabled, shape = AudilegeLayout.cardShape,
+                color = base, contentColor = Color.White, modifier = Modifier.fillMaxWidth()) {
+                BoxWithConstraints(Modifier.background(Brush.horizontalGradient(listOf(base, lerp(accent,Color(0xff243430),.56f)))).padding(18.dp)) {
+                    val artWidth = (maxWidth * .26f).coerceAtMost(120.dp)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            val label = when (lead.mode) {
+                                Mode.Read -> R.string.home_last_read
+                                Mode.Listen -> R.string.home_last_listen
+                                Mode.Follow -> R.string.home_last_follow
+                            }
+                            Text(stringResource(label), style = MaterialTheme.typography.labelMedium)
+                            Text(item.title, style = MaterialTheme.typography.headlineSmall, fontFamily = FontFamily.Serif)
+                            if (item.author.isNotBlank()) Text(item.author, style = MaterialTheme.typography.bodyMedium)
+                            lead.fraction?.let { LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                color = Color.White, trackColor = Color.White.copy(alpha = .28f)) }
+                            val location = listOfNotNull(lead.chapter.takeIf(String::isNotBlank), lead.percentLabel()).joinToString(" · ")
+                            if (location.isNotEmpty()) Text(location, style = MaterialTheme.typography.labelMedium)
+                            Surface(modifier = Modifier.padding(top = 6.dp), shape = CircleShape, color = Color(0xffe6efe1), contentColor = Color(0xff1d332d)) {
+                                Text(stringResource(modeAction(lead.mode,true)), Modifier.padding(horizontal = 14.dp, vertical = 8.dp), style = MaterialTheme.typography.labelLarge)
+                            }
+                        }
+                        BookCover(item.title, covers, item.key, item.cover, Modifier.width(artWidth).aspectRatio(if (lead.mode == Mode.Listen) 1f else .67f))
+                    }
                 }
-                book.fraction?.let { LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth().padding(top = 5.dp)) }
+            }
+        }
+        if (books.size > 1) {
+            Text(stringResource(R.string.home_started), Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (book in books.drop(1).take(2)) {
+                    Surface(onClick = book.item.open, enabled = enabled, modifier = Modifier.weight(1f),
+                        shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainer) {
+                        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            BookCover(book.item.title, covers, book.item.key, book.item.cover, Modifier.width(32.dp).aspectRatio(if (book.mode == Mode.Listen) 1f else .67f))
+                            Column {
+                                Text(book.item.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                                Text(listOfNotNull(stringResource(book.mode.label), book.percentLabel()).joinToString(" · "), style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-@Composable
-private fun ContinueReading(books: List<RecentBook>, covers: CoverStore, enabled: Boolean) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(R.string.shelf_continue_read), Modifier.semantics { heading() },
-            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val width = if (books.size == 1) maxWidth.coerceAtMost(400.dp) else minOf(maxWidth * .90f, 340.dp)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(books, key = { it.item.key }) { book ->
-                    ResumeCard(book, covers, enabled, Modifier.width(width))
-                }
-            }
-        }
-    }
-}
+private fun RecentBook.percentLabel() = fraction?.let { "${(it * 100).roundToInt()} %" }
 
 @Composable
 internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<RecentBook>, covers: CoverStore, busy: Boolean,
@@ -109,16 +136,17 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
         items.filter { it.category == "podcast" }.sortedByDescending { it.added }
             .distinctBy { it.showKey }.sortedBy { it.showTitle.lowercase() }
     }
+    val home = tab == ShelfTab.Home && query.isBlank() && !search
     val podcastView = tab == ShelfTab.Discover && category == "podcast"
     val show = shows.firstOrNull { showKey.isNotEmpty() && it.showKey == showKey }
     LaunchedEffect(tab, query, sort, category, showKey) { grid.scrollToItem(0) }
-    val visible = remember(items, query, sort, category, tab, showKey) {
+    val visible = remember(items, query, sort, category, tab, showKey, home) {
         val filtered = items.filter { (tab != ShelfTab.Discover || category.isEmpty() || it.category == category) &&
             (!podcastView || showKey.isEmpty() || it.showKey == showKey) &&
-            (tab != ShelfTab.Library || query.isNotBlank() || it.category != "podcast") &&
+            (!home || it.category != "podcast") &&
             (it.title.contains(query, true) || it.author.contains(query, true) || it.showTitle.contains(query, true)) }
         val alphabet = compareBy<ShelfItem, String>(String.CASE_INSENSITIVE_ORDER) { it.title }
-        filtered.sortedWith(when (sort) {
+        filtered.sortedWith(when (if (home) 0 else sort) {
             0 -> compareByDescending<ShelfItem> { it.added }.then(alphabet)
             1 -> compareBy<ShelfItem> { it.added == null }.thenBy { it.added }.then(alphabet)
             3 -> alphabet.reversed()
@@ -127,8 +155,8 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
         })
     }
     Column(Modifier.fillMaxSize().statusBarsPadding().displayCutoutPadding()) {
-        FolioBar(stringResource(if (tab == ShelfTab.Discover) R.string.shelf_categories else tab.label), openMenu) {
-            Box {
+        FolioBar(stringResource(if (tab == ShelfTab.Discover) R.string.shelf_categories else tab.label), openMenu, brand = tab == ShelfTab.Home) {
+            if (!home) Box {
                 TextButton(onClick = { sortMenu = true }) { Text(stringResource(R.string.shelf_sort)) }
                 DropdownMenu(sortMenu, { sortMenu = false }) {
                     choices.forEachIndexed { index, label -> DropdownMenuItem(text = { Text(stringResource(label)) },
@@ -144,6 +172,7 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
             modifier = Modifier.fillMaxWidth().padding(horizontal = AudilegeLayout.pageInset), label = { Text(stringResource(R.string.shelf_filter)) })
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val columns = when {
+                home -> GridCells.Fixed(3)
                 list -> GridCells.Fixed(1)
                 maxWidth < 360.dp -> GridCells.Fixed(2)
                 maxWidth < 520.dp -> GridCells.Fixed(3)
@@ -152,18 +181,31 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
             LazyVerticalGrid(columns, state = grid, contentPadding = PaddingValues(start = AudilegeLayout.pageInset, end = AudilegeLayout.pageInset, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 item(span = { GridItemSpan(maxLineSpan) }) { header() }
-                if (tab == ShelfTab.Library && recent.isNotEmpty() && !search && query.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                if (home && recent.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
                     ContinueReading(recent, covers, !busy)
                 }
-                if ((tab == ShelfTab.Library || podcastView) && query.isBlank() && shows.isNotEmpty() && show == null)
+                if ((home || podcastView) && query.isBlank() && shows.isNotEmpty() && show == null)
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(stringResource(R.string.shelf_podcasts), Modifier.weight(1f).semantics { heading() },
+                                Text(stringResource(if (home) R.string.home_podcasts else R.string.shelf_podcasts), Modifier.weight(1f).semantics { heading() },
                                     style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                 if (!podcastView) TextButton(onClick = { openPodcasts("") }) { Text(stringResource(R.string.shelf_see_all)) }
                             }
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (home) shows.take(3).forEach { episode ->
+                                Surface(onClick = { openPodcasts(episode.showKey) }, enabled = !busy,
+                                    shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainer) {
+                                    Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        BookCover(episode.showTitle, covers, episode.key, episode.cover, Modifier.size(52.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(episode.showTitle.ifBlank { episode.author }, style = MaterialTheme.typography.titleSmall)
+                                            if (episode.author.isNotBlank() && episode.author != episode.showTitle)
+                                                Text(episode.author, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                }
+                            } else LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 items(shows, key = { it.key }) { episode ->
                                     Box(Modifier.width(106.dp)) {
                                         LibraryTile(episode.copy(title = episode.showTitle.ifBlank { episode.author },
@@ -173,13 +215,13 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                             }
                         }
                     }
-                if (tab != ShelfTab.Library || visible.isNotEmpty() || shows.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                if (!home || visible.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(if (podcastView) show?.showTitle ?: stringResource(R.string.shelf_episodes)
-                            else stringResource(if (tab == ShelfTab.Downloads) R.string.local else R.string.shelf_mine),
+                            else stringResource(if (home) R.string.home_new else if (tab == ShelfTab.Downloads) R.string.local else R.string.shelf_mine),
                             Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        if (tab == ShelfTab.Library && items.isNotEmpty()) TextButton(onClick = seeAll) { Text(stringResource(R.string.shelf_see_all)) }
-                        IconButton(onClick = { setList(!list) }) { Icon(painterResource(if (list) R.drawable.shelf_grid else R.drawable.shelf_list),
+                        if (home && items.isNotEmpty()) TextButton(onClick = seeAll) { Text(stringResource(R.string.shelf_see_all)) }
+                        if (!home) IconButton(onClick = { setList(!list) }) { Icon(painterResource(if (list) R.drawable.shelf_grid else R.drawable.shelf_list),
                             stringResource(if (list) R.string.shelf_grid else R.string.shelf_list)) }
                     }
                 }
@@ -193,11 +235,11 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                         }
                     }
                 }
-                items(visible, key = { it.key }) { book -> LibraryTile(book, covers, list, !busy, book.open) }
-                if (visible.isEmpty() && !busy && (tab != ShelfTab.Library || shows.isEmpty() || query.isNotBlank())) item(span = { GridItemSpan(maxLineSpan) }) {
+                items(if (home) visible.take(3) else visible, key = { it.key }) { book -> LibraryTile(book, covers, list && !home, !busy, book.open) }
+                if (visible.isEmpty() && !busy && (!home || shows.isEmpty())) item(span = { GridItemSpan(maxLineSpan) }) {
                     if (query.isNotBlank()) Text(stringResource(R.string.shelf_no_results)) else empty()
                 }
-                if (more != null) item(span = { GridItemSpan(maxLineSpan) }) {
+                if (more != null && !home) item(span = { GridItemSpan(maxLineSpan) }) {
                     OutlinedButton(onClick = more, enabled = !busy) {
                         Text(stringResource(if (query.isBlank()) R.string.more else R.string.shelf_more_hits))
                     }

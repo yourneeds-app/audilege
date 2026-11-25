@@ -555,7 +555,7 @@ internal object AudilegePlayback {
         lastCheckpointMs = p.elapsedMs
         lastPersist = SystemClock.elapsedRealtime()
         val chapterFraction = engine.fractionAt(p)
-        val candidate = book.publication.progressPayload(chapter, null, engine.anchor, chapterFraction, true)
+        val candidate = book.publication.progressPayload(chapter, null, engine.anchor, chapterFraction, true, book.mode)
         prefs?.edit()?.also {
             if (candidate != null) it.putString("$key.passage", candidate.toString())
             sync?.remote?.let { remote -> it.putString("$key.audioServer", remote.toString()) }
