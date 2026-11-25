@@ -3,8 +3,8 @@
     <string name="activity_read">Lesen</string>
     <string name="activity_listen">Hörbücher</string>
     <string name="activity_tts">Vorlesen</string>
-    <string name="activity_account_required">Wähle ein BookOrbit-Kontoprofil, um Statistiken für Lesen, Hörbücher und Vorlesen abzugleichen.</string>
-    <string name="activity_timezone">BookOrbit-Zeitzone: %1$s</string>
-    <string name="activity_completed_total">Abgeschlossene Bücher auf BookOrbit, insgesamt: %1$d</string>
+    <string name="activity_account_required">Wähle ein Serverprofil, um deine Statistiken abzugleichen.</string>
+    <string name="activity_timezone">Kontozeitzone: %1$s</string>
+    <string name="activity_completed_total">Abgeschlossene Bücher insgesamt: %1$d</string>
     <string name="activity_unknown_hint">Einige Serversitzungen haben keine bekannte Aktivitätsart. Sie zählen nur unter Alle Aktivitäten.</string>
 </resources>

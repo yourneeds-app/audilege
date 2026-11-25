@@ -127,7 +127,7 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
     sort: Int, setSort: (Int) -> Unit, category: String, setCategory: (String) -> Unit,
     list: Boolean, setList: (Boolean) -> Unit, openMenu: () -> Unit, more: (() -> Unit)?, seeAll: () -> Unit,
     header: @Composable () -> Unit, empty: @Composable () -> Unit, query: String, setQuery: (String) -> Unit,
-    showKey: String, openPodcasts: (String) -> Unit) {
+    showKey: String, openPodcasts: (String) -> Unit, importEpub: () -> Unit) {
     var search by rememberSaveable(tab) { mutableStateOf(false) }
     var sortMenu by remember { mutableStateOf(false) }
     val choices = listOf(R.string.sort_new, R.string.sort_old, R.string.sort_az, R.string.sort_za, R.string.shelf_by_author)
@@ -156,6 +156,9 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
     }
     Column(Modifier.fillMaxSize().statusBarsPadding().displayCutoutPadding()) {
         FolioBar(stringResource(if (tab == ShelfTab.Discover) R.string.shelf_categories else tab.label), openMenu, brand = tab == ShelfTab.Home) {
+            if (tab == ShelfTab.Library) IconButton(onClick = importEpub, enabled = !busy) {
+                Icon(painterResource(R.drawable.menu_upload), stringResource(R.string.import_epub))
+            }
             if (!home) Box {
                 TextButton(onClick = { sortMenu = true }) { Text(stringResource(R.string.shelf_sort)) }
                 DropdownMenu(sortMenu, { sortMenu = false }) {

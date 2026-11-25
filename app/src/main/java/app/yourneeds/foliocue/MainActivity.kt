@@ -418,7 +418,6 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
             if (history.any { screen -> screen.page.entries.any { it.category == "podcast" } })
                 MenuItem(R.string.shelf_podcasts, selected = tab == ShelfTab.Discover && category == "podcast",
                     icon = R.drawable.shelf_headphones) { openPodcasts("") } else null,
-            MenuItem(R.string.import_epub, icon = R.drawable.menu_upload) { if (!busy) startImport() },
             MenuItem(R.string.listening_statistics, icon = R.drawable.menu_statistics) { if (!busy) statistics = true }
         ), brand = true, profileItem = MenuItem(R.string.profile_and_server, selected = tab == ShelfTab.Profile,
                 icon = R.drawable.shelf_profile, supporting = selected?.label ?: stringResource(R.string.local)) {
@@ -462,7 +461,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                                     category, { category = it; podcastShow = "" }, list,
                                     showKey = podcastShow, openPodcasts = ::openPodcasts,
                                     setList = { list = it; display.edit().putBoolean("shelf.list",it).apply() },
-                                    openMenu = menu,more = more,seeAll = { category = ""; navigate(ShelfTab.Library) },
+                                    openMenu = menu, importEpub = ::startImport, more = more,seeAll = { category = ""; navigate(ShelfTab.Library) },
                                     header = {
                                         Column {
                                             updates.available?.let { release -> TextButton(onClick = { settings = true }) {
@@ -491,7 +490,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                                             if (selected == null && tab != ShelfTab.Downloads) Button(onClick = { profileForm(null) }) {
                                                 Text(stringResource(R.string.shelf_connect))
                                             }
-                                            OutlinedButton(onClick = { startImport() }) { Text(stringResource(R.string.shelf_local_import)) }
+                                            if (tab != ShelfTab.Library) OutlinedButton(onClick = { startImport() }) { Text(stringResource(R.string.shelf_local_import)) }
                                         }
                                     },query = query,setQuery = { query = it })
                             }
