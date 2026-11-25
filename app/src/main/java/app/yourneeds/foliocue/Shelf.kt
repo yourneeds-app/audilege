@@ -128,6 +128,7 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
     list: Boolean, setList: (Boolean) -> Unit, openMenu: () -> Unit, more: (() -> Unit)?, seeAll: () -> Unit,
     header: @Composable () -> Unit, empty: @Composable () -> Unit, query: String, setQuery: (String) -> Unit,
     showKey: String, openPodcasts: (String) -> Unit, importEpub: () -> Unit) {
+    val canSearch = tab == ShelfTab.Home || tab == ShelfTab.Library
     var search by rememberSaveable(tab) { mutableStateOf(false) }
     var sortMenu by remember { mutableStateOf(false) }
     val choices = listOf(R.string.sort_new, R.string.sort_old, R.string.sort_az, R.string.sort_za, R.string.shelf_by_author)
@@ -168,11 +169,11 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                         onClick = { setSort(index); sortMenu = false }) }
                 }
             }
-            IconButton(onClick = { search = !search; if (!search) setQuery("") }) {
+            if (canSearch) IconButton(onClick = { search = !search; if (!search) setQuery("") }) {
                 Icon(if (search) Icons.Default.Close else Icons.Default.Search, stringResource(if (search) R.string.close else R.string.shelf_search))
             }
         }
-        if (search || query.isNotEmpty()) OutlinedTextField(query, setQuery, singleLine = true,
+        if (canSearch && (search || query.isNotEmpty())) OutlinedTextField(query, setQuery, singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(horizontal = AudilegeLayout.pageInset), label = { Text(stringResource(R.string.shelf_filter)) })
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val columns = when {
