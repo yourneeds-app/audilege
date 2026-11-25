@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
@@ -252,11 +254,29 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                 verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 item(span = { GridItemSpan(maxLineSpan) }) { header() }
                 if (canFilter && (category.isNotEmpty() || items.any { it.category.isNotEmpty() })) item(span = { GridItemSpan(maxLineSpan) }) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for ((value, label) in listOf("" to R.string.shelf_all_media, "audilege" to R.string.app,
-                            "ebook" to R.string.shelf_ebooks, "audio" to R.string.shelf_audio_category, "podcast" to R.string.shelf_podcasts)) {
-                            if (value.isEmpty() || value == category || items.any { it.category == value }) {
-                                FilterChip(category == value, { setCategory(value) }, { Text(stringResource(label)) })
+                    val categories = listOf("" to R.string.shelf_all_media, "audilege" to R.string.app,
+                        "ebook" to R.string.shelf_ebooks, "audio" to R.string.shelf_audio_category,
+                        "podcast" to R.string.shelf_podcasts).filter { (value, _) ->
+                        value.isEmpty() || value == category || items.any { it.category == value }
+                    }
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        val minWidth = 98.dp * LocalDensity.current.fontScale
+                        val columns = ((maxWidth + 8.dp) / (minWidth + 8.dp)).toInt().coerceAtLeast(1)
+                        val rowSize = when {
+                            categories.size <= columns -> categories.size
+                            columns >= 3 && categories.size == 5 -> 3
+                            columns >= 2 -> 2
+                            else -> 1
+                        }
+                        Column {
+                            categories.chunked(rowSize).forEach { row ->
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    row.forEach { (value, label) ->
+                                        FilterChip(category == value, { setCategory(value) },
+                                            { Text(stringResource(label), Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
+                                            modifier = Modifier.weight(1f))
+                                    }
+                                }
                             }
                         }
                     }

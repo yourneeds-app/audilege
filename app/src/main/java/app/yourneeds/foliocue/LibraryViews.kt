@@ -11,7 +11,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
@@ -135,6 +138,19 @@ internal fun savedMode(prefs: SharedPreferences, file: File, publication: Public
 @Composable
 internal fun LibraryTile(item: ShelfItem, covers: CoverStore, list: Boolean, enabled: Boolean, open: () -> Unit) {
     val square = item.category == "podcast" || item.category == "audio"
+    val artwork: @Composable (Modifier) -> Unit = { modifier ->
+        Box(modifier) {
+            BookCover(item.title, covers, item.key, item.cover, Modifier.matchParentSize(), crop = item.category == "podcast")
+            if (item.category != "podcast" && (item.played || item.percent >= 100.0)) {
+                Surface(modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp).size(24.dp),
+                    shape = CircleShape, color = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Check, stringResource(R.string.shelf_finished), Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+    }
     Surface(onClick = open, enabled = enabled, color = MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
         val description: @Composable () -> Unit = {
@@ -160,10 +176,10 @@ internal fun LibraryTile(item: ShelfItem, covers: CoverStore, list: Boolean, ena
         }
         if (list) Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            BookCover(item.title, covers, item.key, item.cover, Modifier.width(54.dp).aspectRatio(if (square) 1f else .70f), crop = item.category == "podcast")
+            artwork(Modifier.width(54.dp).aspectRatio(if (square) 1f else .70f))
             description()
         } else Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            BookCover(item.title, covers, item.key, item.cover, Modifier.fillMaxWidth().aspectRatio(if (square) 1f else .72f), crop = item.category == "podcast")
+            artwork(Modifier.fillMaxWidth().aspectRatio(if (square) 1f else .72f))
             description()
         }
     }
