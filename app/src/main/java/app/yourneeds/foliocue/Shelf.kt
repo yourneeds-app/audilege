@@ -197,8 +197,8 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                 item(span = { GridItemSpan(maxLineSpan) }) { header() }
                 if (canFilter && (category.isNotEmpty() || items.any { it.category.isNotEmpty() })) item(span = { GridItemSpan(maxLineSpan) }) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for ((value, label) in listOf("" to R.string.shelf_all_media, "ebook" to R.string.shelf_ebooks,
-                            "audio" to R.string.shelf_audio_category, "audilege" to R.string.audilege_brand, "podcast" to R.string.shelf_podcasts)) {
+                        for ((value, label) in listOf("audilege" to R.string.app, "" to R.string.shelf_all_media,
+                            "ebook" to R.string.shelf_ebooks, "audio" to R.string.shelf_audio_category, "podcast" to R.string.shelf_podcasts)) {
                             if (value.isEmpty() || value == category || items.any { it.category == value }) {
                                 FilterChip(category == value, { setCategory(value) }, { Text(stringResource(label)) })
                             }
