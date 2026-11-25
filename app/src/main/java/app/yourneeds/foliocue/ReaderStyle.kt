@@ -48,7 +48,7 @@ private fun SharedPreferences.readStyle(darkSystem: Boolean, defaultPaper: Paper
     val paper = if (follow) { if (darkSystem) Paper.Night else Paper.Day } else paper(defaultPaper)
     return ReaderStyle(paper, follow, Typeface.entries.getOrElse(getInt("font", 0)) { Typeface.Original },
         getInt("size", 100).coerceIn(75, 200), getInt("pageMargin", 20).coerceIn(8, 56),
-        getFloat("lineSpacing", 1.5f).coerceIn(1.15f, 2f), getBoolean("paged", false),
+        getFloat("lineSpacing", 1.5f).coerceIn(1.15f, 2f), getBoolean("paged", true),
         getBoolean("markUnderline", false), getInt("markHue", 0).coerceIn(0, 2), getBoolean("markVivid", false))
 }
 

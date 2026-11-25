@@ -6,6 +6,9 @@ Audilege is an Android reader and audiobook player for Audilege Server and [Book
 
 ## Getting started
 
+- In **Read** mode, the arrows, a horizontal swipe or a tap near either edge turn one screen-sized page. Tap the chapter and page number to open the contents. **Aa** lets you switch to scrolling.
+- When your Audilege Server library contains podcast episodes, open **Podcasts** in the library or drawer. Select a show to see its episodes with the most recent first.
+
 - Open **Categories → Discover** to browse all titles, or select an available media category. Use **Sort** to change the order. Server and profile selection is at the bottom of the drawer, above Settings.
 - The yearly statistics include a daily activity calendar. Short words without individual timestamps are highlighted alongside a timed word in the same marked sentence when the EPUB provides word spans.
 

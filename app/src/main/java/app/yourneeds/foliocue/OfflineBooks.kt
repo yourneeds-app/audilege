@@ -17,6 +17,27 @@ import kotlinx.coroutines.withContext
 
 /** Download filenames predate BookOrbit progress sync. Record the server edition alongside each copy. */
 internal object OfflineBooks {
+    fun rememberPodcast(prefs: SharedPreferences, file: File, entry: CatalogEntry): Boolean {
+        if (entry.category != "podcast") return false
+        val key = "podcast.${keyOf(file.absolutePath)}"
+        val data = org.json.JSONObject().put("show", entry.showTitle).put("key", entry.showKey)
+            .put("published", entry.added).toString()
+        if (prefs.getString(key, null) == data) return false
+        prefs.edit().putString(key, data).apply()
+        return true
+    }
+
+    fun localEntry(prefs: SharedPreferences, file: File, publication: Publication): CatalogEntry {
+        val entry = CatalogEntry(publication.title, file.toURI(), true, publication.author)
+        val data = prefs.getString("podcast.${keyOf(file.absolutePath)}", null)
+        if (data != null) {
+            val show = org.json.JSONObject(data)
+            return entry.copy(category = "podcast", showKey = show.optString("key"), showTitle = show.optString("show"),
+                added = show.optLong("published").takeIf { it > 0 })
+        }
+        return entry.copy(category = if (publication.spine.any { it.overlay.isNotBlank() }) "audilege" else "ebook")
+    }
+
     fun matchExisting(preferences: SharedPreferences, folder: File, entries: List<CatalogEntry>): Boolean {
         val local = folder.list()?.toSet().orEmpty()
         if (local.none { it.endsWith(".epub") }) return false
@@ -27,6 +48,7 @@ internal object OfflineBooks {
             val filename = keyOf("${entry.url}#$fileId") + ".epub"
             if (filename !in local) continue
             val file = File(folder, filename)
+            if (rememberPodcast(preferences, file, entry)) matched = true
             val key = keyOf(file.absolutePath)
             if (preferences.getString("edition.folder.$key", null) == folder.absolutePath) continue
             associate(preferences, file, OrbitBook(bookId, fileId, "", ""))

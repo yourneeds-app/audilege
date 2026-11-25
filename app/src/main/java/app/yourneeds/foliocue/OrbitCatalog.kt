@@ -193,6 +193,8 @@ internal class OrbitCatalog(
         val title = book.optString("title").ifBlank { book.optJSONObject("metadata")?.optString("title").orEmpty() }
         return CatalogEntry(title.ifBlank { "#$id" }, URI("$api/books/$id"), true, author(book),
             editionFileId = edition, primaryFileId = primary, readingPercent = percent, category = book.optString("category"),
+            showKey = book.optJSONObject("podcast")?.optString("key").orEmpty(),
+            showTitle = book.optJSONObject("podcast")?.optString("show").orEmpty(),
             added = book.optJSONObject("podcast")?.optLong("published", 0)?.takeIf { it > 0 }?.times(1000)
                 ?: listOf("addedAt","addedOn","createdAt").firstNotNullOfOrNull { key ->
                     runCatching { java.time.Instant.parse(book.getString(key)).toEpochMilli() }.getOrNull()

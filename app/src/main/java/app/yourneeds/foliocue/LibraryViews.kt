@@ -135,6 +135,7 @@ internal fun savedMode(prefs: SharedPreferences, file: File, publication: Public
 
 @Composable
 internal fun LibraryTile(item: ShelfItem, covers: CoverStore, list: Boolean, enabled: Boolean, open: () -> Unit) {
+    val square = item.category == "podcast" || item.category == "audio"
     Surface(onClick = open, enabled = enabled, color = MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
         val description: @Composable () -> Unit = {
@@ -150,10 +151,10 @@ internal fun LibraryTile(item: ShelfItem, covers: CoverStore, list: Boolean, ena
         }
         if (list) Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            BookCover(item.title, covers, item.key, item.cover, Modifier.width(54.dp).aspectRatio(.70f))
+            BookCover(item.title, covers, item.key, item.cover, Modifier.width(54.dp).aspectRatio(if (square) 1f else .70f))
             description()
         } else Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            BookCover(item.title, covers, item.key, item.cover, Modifier.fillMaxWidth().aspectRatio(.72f))
+            BookCover(item.title, covers, item.key, item.cover, Modifier.fillMaxWidth().aspectRatio(if (square) 1f else .72f))
             description()
         }
     }
@@ -177,7 +178,8 @@ internal fun DetailScreen(
     val started = prefs.contains("$key.mode") || prefs.contains("$key.chapter")
     val sectionIndex = prefs.getInt("$key.chapter",0)
     val hasAudio = publication?.spine?.any { it.overlay.isNotBlank() } == true
-    var choice by remember(book, started) { mutableStateOf(savedMode(prefs, book.localFile, publication)) }
+    val podcast = book.entry.category == "podcast"
+    var choice by remember(book, started) { mutableStateOf(if (podcast) Mode.Listen else savedMode(prefs, book.localFile, publication)) }
     var confirm by remember(book) { mutableStateOf(false) }
     val coverKey = book.coverKey
     val loadCover: () -> InputStream? = {
@@ -196,7 +198,7 @@ internal fun DetailScreen(
                 BoxWithConstraints {
                     val coverWidth = if (maxWidth >= 600.dp) 190.dp else (maxWidth * .42f).coerceAtMost(160.dp)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        BookCover(title, covers, coverKey, loadCover, Modifier.width(coverWidth).aspectRatio(.70f))
+                        BookCover(title, covers, coverKey, loadCover, Modifier.width(coverWidth).aspectRatio(if (podcast) 1f else .70f))
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold)
@@ -204,7 +206,7 @@ internal fun DetailScreen(
                             online?.detail?.series?.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.shelf_series, it)) }
                             online?.detail?.pages?.takeIf { it > 0 }?.let { Text(stringResource(R.string.shelf_pages, it), style = MaterialTheme.typography.bodySmall) }
                             online?.detail?.narrator?.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.shelf_narrator, it), style = MaterialTheme.typography.bodySmall) }
-                            if (publication != null) Text(stringResource(if (hasAudio) R.string.shelf_audio else R.string.shelf_plain), style = MaterialTheme.typography.labelMedium)
+                            if (publication != null) Text(stringResource(if (podcast) R.string.shelf_podcasts else if (hasAudio) R.string.shelf_audio else R.string.shelf_plain), style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
@@ -220,7 +222,7 @@ internal fun DetailScreen(
                         Spacer(Modifier.width(8.dp))
                         Text(stringResource(modeAction(choice, started)))
                     }
-                    if (hasAudio) Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (hasAudio && !podcast) Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf(Mode.Read to R.string.shelf_read, Mode.Listen to R.string.shelf_listen, Mode.Follow to R.string.shelf_follow).forEach { (item, text) ->
                             val picked = item == choice
                             Surface(Modifier.weight(1f), shape = MaterialTheme.shapes.medium, color = if (picked) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer) {

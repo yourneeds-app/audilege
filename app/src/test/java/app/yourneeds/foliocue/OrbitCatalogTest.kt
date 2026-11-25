@@ -43,7 +43,9 @@ class OrbitCatalogTest {
                     if (auth == "Bearer initial") 401 to "{}" else 200 to """
                         {"items":[
                           {"id":41,"title":"Example EPUB","files":[{"id":8,"format":"epub"}]},
-                          {"id":42,"title":"Audio only","files":[{"id":9,"format":"mp3"}]}
+                          {"id":42,"title":"Audio only","files":[{"id":9,"format":"mp3"}]},
+                          {"id":43,"title":"Test episode","category":"podcast","podcast":{"show":"Test show","key":"test-feed","published":1777000000},
+                           "files":[{"id":10,"role":"primary","format":"epub","mediaOverlay":{"available":true}}]}
                         ],"total":61,"page":0,"size":60}
                     """.trimIndent()
                 }
@@ -65,9 +67,15 @@ class OrbitCatalogTest {
             var stored = ""
             val resumed = OrbitCatalog(profile, login.credential()) { stored = it }
             val page = resumed.page(profile.catalog)
-            assertEquals(listOf("Example EPUB"), page.entries.map { it.title })
-            assertEquals(URI("${profile.api}/books/41"), page.entries.single().url)
-            assertEquals(8L, page.entries.single().editionFileId)
+            assertEquals(listOf("Example EPUB", "Test episode"), page.entries.map { it.title })
+            assertEquals(URI("${profile.api}/books/41"), page.entries.first().url)
+            assertEquals(8L, page.entries.first().editionFileId)
+            val podcast = page.entries.last()
+            assertEquals("podcast", podcast.category)
+            assertEquals("Test show", podcast.showTitle)
+            assertEquals("test-feed", podcast.showKey)
+            assertEquals(1777000000000L, podcast.added)
+            assertEquals(10L, podcast.editionFileId)
             assertEquals("page=1", page.next?.query)
             assertEquals("refresh-two", JSONObject(stored).getString("refreshToken"))
             assertEquals(listOf("POST auth/login native reader", "books/query Bearer initial 0",

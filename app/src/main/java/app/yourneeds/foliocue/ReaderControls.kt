@@ -81,12 +81,19 @@ private fun PlayControl(playing: Boolean, loading: Boolean, enabled: Boolean, la
 }
 
 @Composable
-private fun ChapterButton(previous: Boolean, enabled: Boolean, click: () -> Unit) {
-    val label = stringResource(if (previous) R.string.chapter_previous else R.string.chapter_next)
+private fun ChapterButton(previous: Boolean, enabled: Boolean, click: () -> Unit, page: Boolean = false) {
+    val label = stringResource(if (page && previous) R.string.reader_previous_page else if (page) R.string.reader_next_page
+        else if (previous) R.string.chapter_previous else R.string.chapter_next)
     IconButton(onClick = click, enabled = enabled, modifier = Modifier.semantics { contentDescription = label }) {
         val ink = LocalContentColor.current
         Canvas(Modifier.size(21.dp)) {
             fun x(frac: Float) = size.width * (if (previous) 1f-frac else frac)
+            if (page) {
+                val tip = Offset(x(.65f),size.height * .5f)
+                drawLine(ink, Offset(x(.30f),size.height * .16f), tip, size.width * .11f)
+                drawLine(ink, tip, Offset(x(.30f),size.height * .84f), size.width * .11f)
+                return@Canvas
+            }
             val play = Path().apply {
                 moveTo(x(.1f),size.height*.10f); lineTo(x(.75f),size.height*.50f)
                 lineTo(x(.1f),size.height*.90f); close()
@@ -116,6 +123,7 @@ internal fun ReaderDock(
     playing: Boolean, loading: Boolean, audioAvailable: Boolean, onPrevious: () -> Unit,
     onNext: () -> Unit, onContents: () -> Unit, onSpeed: () -> Unit, onPlay: () -> Unit,
     onRepeat: (() -> Unit)? = null,
+    pages: Pair<Int, Int>? = null,
 ) {
     Surface(color = if (mode == Mode.Listen) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth()) {
@@ -152,9 +160,10 @@ internal fun ReaderDock(
                     }
                 } else {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        ChapterButton(true,hasPrevious,onPrevious)
+                        ChapterButton(true,hasPrevious,onPrevious, page = pages != null)
                         TextButton(onClick = onContents,modifier = Modifier.weight(1f)) {
-                            Text(stringResource(R.string.audio_chapter,chapter + 1), textAlign = TextAlign.Center)
+                            Text(if (pages == null) stringResource(R.string.audio_chapter,chapter + 1)
+                                else stringResource(R.string.reader_page_status, chapter + 1, pages.first + 1, pages.second), textAlign = TextAlign.Center)
                         }
                         if (mode == Mode.Follow) {
                             if (onRepeat != null) {
@@ -163,7 +172,7 @@ internal fun ReaderDock(
                             }
                             PlayControl(playing,loading,audioAvailable,false,onPlay)
                         }
-                        ChapterButton(false,hasNext,onNext)
+                        ChapterButton(false,hasNext,onNext, page = pages != null)
                     }
                 }
             }

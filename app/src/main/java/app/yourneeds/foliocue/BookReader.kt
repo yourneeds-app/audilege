@@ -121,6 +121,7 @@ internal fun BookReader(
     var lastAnchor by remember(location) { mutableStateOf<String?>(location.anchor) }
     var chapterFailed by remember(displayed) { mutableStateOf(false) }
     var view by remember { mutableStateOf<ReaderPage?>(null) }
+    var pages by remember(displayed) { mutableStateOf(0 to 1) }
     val audioError = attached && playback.failed
     var chosenAudioStart by remember { mutableStateOf<Location?>(null) }
     var listenJump by remember(book, mode) { mutableStateOf<ListenJump?>(null) }
@@ -213,7 +214,7 @@ internal fun BookReader(
     fun captureVisible(done: (ReaderTarget) -> Unit) {
         val current = displayed
         val page = view
-        val fallback = ReaderTarget(current.index, current.cfi, current.anchor, offset = page?.scrollY ?: 0)
+        val fallback = ReaderTarget(current.index, current.cfi, current.anchor, offset = page?.readingOffset ?: 0)
         if (mode == Mode.Listen) {
             val label = playback.progress?.elapsedMs?.let { ms ->
                 val s = ms / 1000
@@ -494,7 +495,8 @@ internal fun BookReader(
         }
     }
 
-    LaunchedEffect(view, style) { view?.appearance(style) }
+    val pageMode = mode == Mode.Read && style.paged
+    LaunchedEffect(view, style, mode) { view?.appearance(style.copy(paged = pageMode)) }
     LaunchedEffect(view, mode, inspection) { view?.setFollowing(mode == Mode.Follow && inspection == null) }
 
     val colors = if (mode == Mode.Listen) MaterialTheme.colorScheme else appearanceColors(paper, accent)
@@ -549,6 +551,7 @@ internal fun BookReader(
                             })
                                 .also { page ->
                                     view = page
+                                    page.onPages = { index, total -> pages = index to total }
                                     page.onReadingActivity = { readingInteraction = android.os.SystemClock.elapsedRealtime() }
                                     page.onPageTap = { controls = !controls }
                                     page.onBrowse = {
@@ -661,21 +664,25 @@ internal fun BookReader(
                 val canGoForward = if (mode == Mode.Listen && attached) playback.canChapterBy(1) else if (mode == Mode.Listen)
                     (location.index + 1 until book.spine.size).any(book::mayHaveNarration) else displayed.index < book.spine.lastIndex
                 ReaderDock(
-                    mode, displayed.index, canGoBack, canGoForward, playback.progress.takeIf { attached },
+                    mode, displayed.index, canGoBack || (pageMode && pages.first > 0),
+                    canGoForward || (pageMode && pages.first + 1 < pages.second), playback.progress.takeIf { attached },
                     readyAudio?.takeIf { it.index == location.index }?.durationMs ?: 0, speed, playing,
                     (attached && playback.loading) || lookupInProgress,
                     playing || (attached && (playback.progress != null || audioError)) || chapterCues.isNotEmpty(),
                     onPrevious = {
-                        if (mode == Mode.Listen && attached) playback.chapterBy(-1)
+                        if (pageMode) view?.turn(-1)
+                        else if (mode == Mode.Listen && attached) playback.chapterBy(-1)
                         else if (mode == Mode.Listen) listenJump = ListenJump(location.index - 1, -1)
                         else visit(ReaderTarget(displayed.index - 1))
                     },
                     onNext = {
-                        if (mode == Mode.Listen && attached) playback.chapterBy(1)
+                        if (pageMode) view?.turn(1)
+                        else if (mode == Mode.Listen && attached) playback.chapterBy(1)
                         else if (mode == Mode.Listen) listenJump = ListenJump(location.index + 1, 1)
                         else visit(ReaderTarget(displayed.index + 1))
                     },
                     onContents = { dialog = R.string.contents },
+                    pages = pages.takeIf { pageMode },
                     onSpeed = { dialog = R.string.speed },
                     onRepeat = if (mode == Mode.Follow && chapterCues.isNotEmpty()) ::repeatSentence else null,
                     onPlay = {

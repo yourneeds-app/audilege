@@ -53,6 +53,7 @@ internal data class CatalogEntry(
     val coverUrl: URI? = null, val editionFileId: Long? = null,
     val primaryFileId: Long? = null, val readingPercent: Double? = null,
     val category: String = "", val added: Long? = null,
+    val showKey: String = "", val showTitle: String = "",
 )
 internal data class CatalogPage(val entries: List<CatalogEntry>, val next: URI?)
 internal class CatalogAccessException(val messageId: Int) : IllegalStateException()

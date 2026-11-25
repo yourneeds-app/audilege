@@ -36,6 +36,9 @@ internal class ReaderPage(
     private var touchScrolling = false
     private var followAudio = true
     private var paged = false
+    private var pageIndex = 0
+    val readingOffset get() = if (paged) -1 - pageIndex else scrollY
+    var onPages: (Int, Int) -> Unit = { _, _ -> }
     val chapterPath get() = chapter.path
     val isReady get() = initialized
     var onReadingActivity: () -> Unit = {}
@@ -66,11 +69,6 @@ internal class ReaderPage(
                 if (followAudio) onBrowse()
             }
             return false
-        }
-        override fun onFling(first: MotionEvent?, last: MotionEvent, vx: Float, vy: Float): Boolean {
-            if (!paged || kotlin.math.abs(vx) < kotlin.math.abs(vy) || kotlin.math.abs(vx) < 250) return false
-            turn(if (vx < 0) 1 else -1)
-            return true
         }
         override fun onLongPress(event: MotionEvent) {
             val density = resources.displayMetrics.density
@@ -118,6 +116,7 @@ internal class ReaderPage(
             }
 
             override fun onPageFinished(view: WebView, url: String) {
+                evaluateJavascript(context.assets.open("reader-pages.js").bufferedReader().use { it.readText() }, null)
                 evaluateJavascript(context.assets.open("reader-highlight.js").bufferedReader().use { it.readText() }, null)
                 submittedMark = null
                 applyAppearance()
@@ -143,14 +142,31 @@ internal class ReaderPage(
 
     @android.annotation.SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.actionMasked == MotionEvent.ACTION_DOWN) onReadingActivity()
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            downX = event.x
+            downY = event.y
+            onReadingActivity()
+        }
         gestures.onTouchEvent(event)
+        if (paged && event.actionMasked == MotionEvent.ACTION_UP) {
+            val dx = event.x - downX
+            if (kotlin.math.abs(dx) >= 40 * resources.displayMetrics.density &&
+                kotlin.math.abs(dx) > kotlin.math.abs(event.y - downY) * 1.5f) {
+                turn(if (dx < 0) 1 else -1)
+            }
+        }
         return super.onTouchEvent(event)
     }
+    private var downX = 0f
+    private var downY = 0f
 
     override fun performAccessibilityAction(action: Int, arguments: android.os.Bundle?): Boolean {
         if (action == android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD ||
             action == android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) {
+            if (paged) {
+                turn(if (action == android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) 1 else -1)
+                return true
+            }
             touchScrolling = true
             onReadingActivity()
             if (followAudio) onBrowse()
@@ -167,8 +183,33 @@ internal class ReaderPage(
         onReadingActivity()
         onBrowse()
         touchScrolling = true
-        if (!canScrollVertically(direction)) onTurnAtEdge(direction)
+        if (paged) {
+            evaluateJavascript("window.audilegePages?.turn($direction)") { moved ->
+                if (closed) return@evaluateJavascript
+                if (moved == "false") onTurnAtEdge(direction)
+                if (moved == "true") refreshPages(save = true)
+            }
+        } else if (!canScrollVertically(direction)) onTurnAtEdge(direction)
         else scrollBy(0, (height * 0.90f).toInt() * direction)
+    }
+
+    private fun refreshPages(save: Boolean = false) {
+        if (!paged || closed) return
+        evaluateJavascript("window.audilegePages?.state()") { raw ->
+            val state = runCatching { org.json.JSONArray(raw) }.getOrNull()
+            if (!closed && paged && state != null) {
+                pageIndex = state.getInt(0)
+                onPages(pageIndex, state.getInt(1))
+                if (save) position(readingOffset)
+            }
+        }
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (initialized && paged) post { if (!closed) {
+            evaluateJavascript("window.audilegePages?.reflow()") { refreshPages() }
+        } }
     }
 
     fun appearance(style: ReaderStyle) {
@@ -191,6 +232,18 @@ internal class ReaderPage(
             body :is(p,li,blockquote), body { line-height: ${style.lineSpacing} !important; }
             body :is(p,span,div,section,h1,h2,h3,h4,li,blockquote) { color: inherit !important; }
             img { max-width: 100%; height: auto; }
+            html[data-audilege-pages] { overflow: clip !important; margin: 0 !important; padding: 0 !important; }
+            html[data-audilege-pages] body {
+                --page-inset: max(${style.margin}px, calc((100vw - 44rem) / 2));
+                box-sizing: border-box !important; width: 100vw !important; max-width: none !important;
+                height: 100vh !important; min-height: 0 !important; margin: 0 !important;
+                padding: 12px var(--page-inset) !important;
+                column-count: 1 !important; column-fill: auto !important;
+                column-gap: calc(2 * var(--page-inset)) !important;
+                transform: translateX(var(--audilege-page-x, 0px)) !important;
+                overflow: visible !important; touch-action: pan-y;
+            }
+            html[data-audilege-pages] body :is(img,svg,video) { max-height: calc(100vh - 24px) !important; object-fit: contain; }
             .foliocue-current {
                 $paint border-radius: 0.16em;
                 box-decoration-break: clone; -webkit-box-decoration-break: clone;
@@ -214,21 +267,38 @@ internal class ReaderPage(
                     style.id = 'foliocue-page-style';
                     document.head.appendChild(style);
                 }
+                const pages = window.audilegePages;
+                const wasPaged = pages?.active();
+                if (wasPaged || $paged) pages?.beforeStyle();
                 style.textContent = ${JSONObject.quote(css)};
+                document.documentElement.toggleAttribute('data-audilege-pages', $paged);
+                if ($paged) pages?.reflow();
+                else if (wasPaged) pages.restoreScroll();
             })()
-        """.trimIndent(), null)
+        """.trimIndent()) { refreshPages() }
     }
 
     override fun onScrollChanged(left: Int, top: Int, oldLeft: Int, oldTop: Int) {
         super.onScrollChanged(left, top, oldLeft, oldTop)
-        if (initialized && touchScrolling) position(top)
+        if (initialized && touchScrolling && !paged) position(top)
+    }
+
+    private fun restoreOffset() {
+        if (paged) {
+            val page = when {
+                previousScroll == Int.MAX_VALUE -> Int.MAX_VALUE
+                previousScroll < 0 -> -(previousScroll + 1)
+                else -> previousScroll / height.coerceAtLeast(1)
+            }
+            evaluateJavascript("window.audilegePages?.show($page)") { refreshPages() }
+        } else scrollTo(0, previousScroll.coerceAtLeast(0))
     }
 
     private fun navigateToStart() {
         if (fragment != null) {
             jump(fragment)
         } else if (startingCfi == null) {
-            scrollTo(0, previousScroll)
+            restoreOffset()
         } else {
             evaluateJavascript("""
                 (() => {
@@ -260,11 +330,13 @@ internal class ReaderPage(
                         const range = document.createRange();
                         range.setStart(node, Math.min(offset, node.length));
                         range.collapse(true);
-                        window.scrollBy(0, range.getBoundingClientRect().top - 22);
-                    } else node.scrollIntoView();
+                        if ($paged) window.audilegePages.reveal(range);
+                        else window.scrollBy(0, range.getBoundingClientRect().top - 22);
+                    } else if ($paged) window.audilegePages.reveal(node);
+                    else node.scrollIntoView();
                     return true;
                 })()
-            """.trimIndent()) { found -> if (found != "true") scrollTo(0, previousScroll) }
+            """.trimIndent()) { found -> if (found != "true") restoreOffset() else refreshPages() }
         }
     }
 
@@ -276,7 +348,7 @@ internal class ReaderPage(
                 const marker = document.getElementById($marker);
                 const content = document.body.getBoundingClientRect();
                 let range;
-                const left = Math.max(5, content.left + parseFloat(getComputedStyle(document.body).paddingLeft || '0') + 6);
+                const left = Math.max(5, ($paged ? 0 : content.left) + parseFloat(getComputedStyle(document.body).paddingLeft || '0') + 6);
                 for (let y = 20; !marker && !range && y < Math.min(innerHeight, 180); y += 9) {
                     for (const x of [left, left + 40, left + 100, innerWidth / 2]) {
                         const point = document.caretRangeFromPoint?.(Math.min(x, innerWidth-2), y);
@@ -307,7 +379,8 @@ internal class ReaderPage(
                     node = parent;
                 }
                 const limit = Math.max(1, document.documentElement.scrollHeight);
-                return {cfi: steps.join(''), fraction: (scrollY + 25) / limit, snippet};
+                const pages = $paged && window.audilegePages.state();
+                return {cfi: steps.join(''), fraction: pages ? pages[0] / pages[1] : (scrollY + 25) / limit, snippet};
             })()
         """.trimIndent()) { raw ->
             val parsed = runCatching { JSONObject(raw) }.getOrNull()
@@ -319,7 +392,8 @@ internal class ReaderPage(
     }
 
     fun jump(id: String) {
-        evaluateJavascript("document.getElementById(${JSONObject.quote(id)})?.scrollIntoView()", null)
+        val target = "document.getElementById(${JSONObject.quote(id)})"
+        evaluateJavascript(if (paged) "window.audilegePages?.reveal($target)" else "$target?.scrollIntoView()") { refreshPages() }
     }
 
     fun timedWords(encodedIds: String) {

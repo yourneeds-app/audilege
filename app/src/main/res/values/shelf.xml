@@ -37,6 +37,10 @@
     <string name="shelf_ebooks">E-books</string>
     <string name="shelf_audio_category">Audiobooks</string>
     <string name="shelf_podcasts">Podcasts</string>
+    <string name="shelf_episodes">Episodes</string>
+    <string name="reader_previous_page">Previous page</string>
+    <string name="reader_next_page">Next page</string>
+    <string name="reader_page_status">Chapter %1$d · Page %2$d of %3$d</string>
     <string name="shelf_sort">Sort</string>
     <string name="sort_new">Newest first</string>
     <string name="sort_old">Oldest first</string>
