@@ -9,4 +9,7 @@
     <string name="profile_use">Verwenden</string>
     <string name="profile_local_hint">Importierte Bücher, ohne Serververbindung.</string>
     <string name="profile_use_local">Ohne Server verwenden</string>
+    <string name="profile_remove">Profil entfernen</string>
+    <string name="profile_remove_confirm">„%1$s“ von diesem Gerät entfernen? Dabei werden die gespeicherte Anmeldung und alle auf diesem Gerät unter diesem Profil abgelegten Buchkopien gelöscht. Dein Serverkonto und seine Bibliothek bleiben erhalten.</string>
+    <string name="profile_remove_error">Das Profil konnte nicht vollständig entfernt werden. Bitte versuche es erneut.</string>
 </resources>

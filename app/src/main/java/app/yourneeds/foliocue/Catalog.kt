@@ -147,6 +147,17 @@ internal fun savePublication(stream: InputStream, destination: File): File {
     } finally { partial.delete() }
 }
 
+internal fun removeProfileBooks(books: File, profileId: String) {
+    require(UUID.fromString(profileId).toString() == profileId)
+    val folder = File(books.canonicalFile, profileId)
+    require(folder.canonicalFile == folder)
+    if (!folder.exists()) return
+    val copies = checkNotNull(folder.listFiles())
+    check(copies.none { it.isDirectory })
+    copies.forEach { check(it.delete()) }
+    check(folder.delete())
+}
+
 internal class Profiles(context: Context) {
     private val prefs = context.getSharedPreferences("profiles", Context.MODE_PRIVATE)
 
@@ -159,7 +170,7 @@ internal class Profiles(context: Context) {
         }
     }
 
-    fun save(profile: Profile, credential: String) {
+    fun save(profile: Profile, credential: String) = synchronized(prefs) {
         val entries = JSONArray((list().filterNot { it.id == profile.id } + profile).map {
             JSONObject().put("id", it.id).put("label", it.label).put("server", it.server)
                 .put("user", it.user).put("localHttp", it.localHttp).put("accountLogin", it.accountLogin)
@@ -168,7 +179,15 @@ internal class Profiles(context: Context) {
             .putString(profile.id, encrypt(credential)).commit())
     }
 
-    fun renew(profile: Profile, credential: String) {
+    fun remove(profile: Profile) = synchronized(prefs) {
+        val entries = JSONArray(prefs.getString("entries", "[]"))
+        for (index in entries.length() - 1 downTo 0) {
+            if (entries.getJSONObject(index).getString("id") == profile.id) entries.remove(index)
+        }
+        check(prefs.edit().putString("entries", entries.toString()).remove(profile.id).commit())
+    }
+
+    fun renew(profile: Profile, credential: String) = synchronized(prefs) {
         requireCurrentIdentity(profile)
         check(prefs.edit().putString(profile.id, encrypt(credential)).commit())
     }

@@ -9,4 +9,7 @@
     <string name="profile_use">Use profile</string>
     <string name="profile_local_hint">Imported books, without a server connection.</string>
     <string name="profile_use_local">Use without server</string>
+    <string name="profile_remove">Remove profile</string>
+    <string name="profile_remove_confirm">Remove “%1$s” from this device? This removes its saved login and all book copies stored on this device under this profile. Your server account and its library are kept.</string>
+    <string name="profile_remove_error">Could not finish removing the profile. Please try again.</string>
 </resources>

@@ -416,7 +416,22 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                         Row(Modifier.weight(1f)) {
                             if (detail == null || split) Box(Modifier.weight(if (split && detail != null) .48f else 1f)) {
                                 if (tab == ShelfTab.Profile) ProfilesScreen(profiles, selected, busy,
-                                    openMenu = menu, select = ::select, edit = ::profileForm)
+                                    openMenu = menu, select = ::select, edit = ::profileForm,
+                                    remove = { profile ->
+                                        perform(R.string.profile_remove_error) {
+                                            val wasActive = selected?.id == profile.id
+                                            if (wasActive) AudilegePlayback.stop()
+                                            withContext(Dispatchers.IO) {
+                                                removeProfileBooks(File(context.filesDir, "books"), profile.id)
+                                                store.remove(profile)
+                                            }
+                                            profiles = store.list()
+                                            if (wasActive) {
+                                                select(null)
+                                                navigate(ShelfTab.Profile)
+                                            }
+                                        }
+                                    }, problem = problem)
                                 else ShelfContent(tab,items,recent,covers,busy,
                                     shelfSort, { shelfSort = it; display.edit().putInt("shelf.order",it).apply() },
                                     category, { category = it }, list,
