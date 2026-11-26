@@ -37,7 +37,11 @@ internal object OfflineBooks {
             return entry.copy(category = "podcast", showKey = show.optString("key"), showTitle = show.optString("show"),
                 added = show.optLong("published").takeIf { it > 0 })
         }
-        return entry.copy(category = if (publication.spine.any { it.overlay.isNotBlank() }) "audilege" else "ebook")
+        return entry.copy(category = when {
+            publication.audioOnly -> "audio"
+            publication.spine.any { it.overlay.isNotBlank() } -> "audilege"
+            else -> "ebook"
+        })
     }
 
     fun matchExisting(preferences: SharedPreferences, folder: File, entries: List<CatalogEntry>): Boolean {

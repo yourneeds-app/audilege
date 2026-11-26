@@ -62,13 +62,22 @@ internal fun BookReader(
     activity: MainActivity, file: File, book: Publication, initialMode: Mode?,
     accent: Accent, online: OnlineBook?, serverProgress: JSONObject?,
     covers: CoverStore, ownerScope: kotlinx.coroutines.CoroutineScope, resumeSession: Boolean = false,
+    openReadAlong: (() -> Unit)? = null,
     backLabel: Int = R.string.back, close: () -> Unit,
 ) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("reader", Context.MODE_PRIVATE) }
     val bookKey = keyOf(file.absolutePath)
+    val audioOnly = book.audioOnly || online?.detail?.audioOnly == true
+    val narrated = book.spine.any { it.overlay.isNotBlank() }
+    val modes = when {
+        audioOnly && openReadAlong != null -> listOf(Mode.Listen, Mode.Follow)
+        audioOnly -> listOf(Mode.Listen)
+        narrated -> listOf(Mode.Read, Mode.Listen, Mode.Follow)
+        else -> listOf(Mode.Read)
+    }
     var mode by remember {
-        mutableStateOf(initialMode ?: if (book.spine.any { it.overlay.isNotBlank() }) {
+        mutableStateOf(if (audioOnly) Mode.Listen else initialMode ?: if (narrated) {
             Mode.entries.getOrElse(prefs.getInt("$bookKey.mode", 0)) { Mode.Follow }
         } else Mode.Read)
     }
@@ -243,7 +252,7 @@ internal fun BookReader(
     }
     fun navigate(target: ReaderTarget) {
         if (target.chapter !in book.spine.indices) return
-        if (target.audioMs != null && mode == Mode.Listen) {
+        if (mode == Mode.Listen && (audioOnly || target.audioMs != null)) {
             if (attached) playback.selectChapter(target.chapter, target.anchor, target.audioMs)
             else {
                 location = Location(target.chapter, target.anchor, displayed.revision + 1, elapsedMs = target.audioMs)
@@ -309,6 +318,11 @@ internal fun BookReader(
     val saveOnStop by rememberUpdatedState({ saveNow() })
 
     fun changeMode(entry: Mode) {
+        if (entry !in modes) return
+        if (audioOnly && entry == Mode.Follow) {
+            openReadAlong?.let { open -> saveNow(open) }
+            return
+        }
         if (mode == entry) return
         val previous = mode
         fun store() {
@@ -527,17 +541,17 @@ internal fun BookReader(
 
     val colors = if (mode == Mode.Listen) MaterialTheme.colorScheme else appearanceColors(paper, accent)
     val readerMenu = buildList {
-        if (book.spine.any { it.overlay.isNotBlank() })
+        if (modes.size > 1)
             add(MenuItem(R.string.player_modes) { dialog = R.string.player_modes })
         if (mode == Mode.Listen || mode == Mode.Follow)
             add(MenuItem(R.string.eq_title) { dialog = R.string.eq_title })
-    } + listOf(
-        MenuItem(R.string.reader_search) { dialog = R.string.reader_search },
+    } + listOfNotNull(
+        if (audioOnly) null else MenuItem(R.string.reader_search) { dialog = R.string.reader_search },
         MenuItem(R.string.reader_bookmarks) { dialog = R.string.reader_bookmarks },
     ) + (if (history.isNotEmpty()) listOf(MenuItem(R.string.reader_last_place) {
         navigate(history.removeAt(history.lastIndex))
-    }) else emptyList()) + listOf(
-        MenuItem(R.string.focus_reading) {
+    }) else emptyList()) + listOfNotNull(
+        if (audioOnly) null else MenuItem(R.string.focus_reading) {
             if (mode == Mode.Listen) changeMode(Mode.Read)
             controls = false
         },
@@ -759,7 +773,7 @@ internal fun BookReader(
                 AppVolumeFeedback()
                 if (title == R.string.player_modes) {
                     Column {
-                        listOf(Mode.Read, Mode.Listen, Mode.Follow).forEach { entry ->
+                        modes.forEach { entry ->
                             TextButton(onClick = { changeMode(entry); dialog = null }) { Text(stringResource(entry.label)) }
                         }
                     }

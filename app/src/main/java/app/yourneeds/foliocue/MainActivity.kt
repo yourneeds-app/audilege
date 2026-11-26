@@ -192,9 +192,15 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
     fun openDetail(detail: BookDetail, mode: Mode, local: Boolean, refreshProgress: Boolean = !local) {
         perform(R.string.book_error) {
             opened = withContext(Dispatchers.IO) {
-                val publication = if (local && !detail.preferLocal) Publication(detail.localFile) else detail.publication ?: error("Publication")
-                OpenBook(detail.localFile, publication, mode, detail.onlineBook,
-                    if (refreshProgress) runCatching { detail.onlineBook?.progress() }.getOrNull() else null)
+                val known = detail.onlineBook
+                val online = if (refreshProgress && known != null && known.detail.category.isBlank()) {
+                    runCatching { OnlineBook(known.catalog, known.catalog.details(known.detail.id, known.detail.fileId)) }
+                        .getOrDefault(known)
+                } else known
+                val title = online?.detail?.title?.takeIf(String::isNotBlank) ?: detail.entry.title
+                val publication = if (local) Publication(detail.localFile, title) else detail.publication ?: error("Publication")
+                OpenBook(detail.localFile, publication, mode, online,
+                    if (refreshProgress) runCatching { online?.progress() }.getOrNull() else null)
             }
         }
     }
@@ -202,19 +208,27 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
         perform(R.string.stream_error) {
             val detail = withContext(Dispatchers.IO) {
                 val orbit = catalog as? OrbitCatalog
-                val online = orbit?.let { OnlineBook(it, it.details(entry.url, if (resumeIn != null) entry.editionFileId else null)) }
-                val file = File(folder, keyOf(online?.let { "${entry.url}#${it.detail.fileId}" } ?: entry.url.toString()) + ".epub")
+                val initial = orbit?.details(entry.url, if (resumeIn == Mode.Listen || resumeIn == Mode.Read) entry.editionFileId else null)
+                val alternate = if (resumeIn == Mode.Follow && initial?.audioOnly == true) {
+                    initial.readAlongBookId?.let { orbit?.companionEntry(it) }
+                } else null
+                val source = alternate ?: entry
+                val online = orbit?.let {
+                    OnlineBook(it, if (alternate == null) requireNotNull(initial) else it.details(source.url))
+                }
+                val file = File(folder, keyOf(online?.let { "${source.url}#${it.detail.fileId}" } ?: source.url.toString()) + ".epub")
                 if (online != null) {
                     OfflineBooks.associate(readerPrefs,file,online.detail)
-                    OfflineBooks.rememberPodcast(readerPrefs,file,entry)
+                    OfflineBooks.rememberPodcast(readerPrefs,file,source)
                 }
-                val companion = entry.companionId?.let { id ->
+                val companion = source.companionId?.let { id ->
                     history.asSequence().flatMap { it.page.entries.asSequence() }
                         .firstOrNull { it.url.path.substringAfterLast('/').toLongOrNull()==id }
                         ?: runCatching { orbit?.companionEntry(id) }.getOrNull()
                 }
-                BookDetail(entry,online,file,online?.let { it.catalog.publication(it.detail,entry.title) }
-                    ?: file.takeIf(File::isFile)?.let(::Publication), companion = companion, coverKey = coverKey(entry), coverLoader = { cover(entry) })
+                BookDetail(source,online,file,online?.let { it.catalog.publication(it.detail,source.title) }
+                    ?: file.takeIf(File::isFile)?.let { Publication(it, source.title) }, companion = companion,
+                    coverKey = coverKey(source), coverLoader = { cover(source) })
             }
             details = detail
             if (resumeIn != null && detail.publication != null) opened = withContext(Dispatchers.IO) {
@@ -331,7 +345,23 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                 else if (book.online == null || detail?.preferLocal == true) edit.remove("last.online.${folder.name}")
                 edit.apply()
             }
+            val audio = book.online?.detail
+            val aligned = audio?.readAlongBookId ?: audio?.id?.takeIf {
+                audio.category == "audilege" && audio.primaryFileId != audio.fileId && book.publication.audioOnly
+            }
+            val openReadAlong: (() -> Unit)? = aligned?.let { id ->
+                val target = requireNotNull(book.online).catalog
+                val switchEdition: () -> Unit = { scope.launch {
+                    try {
+                        val entry = withContext(Dispatchers.IO) { target.companionEntry(id) }
+                        if (entry != null) showDetails(entry, Mode.Follow)
+                    } catch (cancel: CancellationException) { throw cancel }
+                    catch (_: Exception) { problem = R.string.book_error }
+                }; Unit }
+                switchEdition
+            }
             key(book.file) { BookReader(activity,book.file,book.publication,book.mode,accent,book.online,book.serverProgress,covers,scope,
+                openReadAlong = openReadAlong,
                 resumeSession = book.resumeSession, backLabel = if (details != null && !settings && !statistics && !form)
                     R.string.reader_back else R.string.back) {
                 val bookKey = keyOf(book.file.absolutePath)
@@ -425,7 +455,8 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
             val entries = remember(history) { history.flatMap { it.page.entries } }
             continueReadingBooks(readerPrefs, display, streams, folder, library, entries, selected, orbit, reload, ::cover) { localBook, entry, mode ->
                 if (localBook != null) {
-                    val detail = localDetail(localBook)
+                    val local = localDetail(localBook)
+                    val detail = if (entry != null) local.copy(entry = entry) else local
                     details = detail
                     openDetail(detail, mode, local = true, refreshProgress = detail.onlineBook != null && current != null)
                 } else if (entry != null) showDetails(entry, resumeIn = mode)
@@ -456,7 +487,10 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                     enqueue = d.entry.url.path.substringAfterLast('/').toLongOrNull()
                         ?.takeIf { orbit?.supportsSharedQueue == true && d.entry.category in setOf("audio","audilege","podcast") }
                         ?.let { id -> { updateQueue("queue",id) } },
-                    open = { mode,offline -> openDetail(d,mode,offline) },
+                    open = { mode,offline ->
+                        if (mode == Mode.Follow && d.onlineBook?.detail?.readAlongBookId != null) showDetails(d.entry, mode)
+                        else openDetail(d,mode,offline)
+                    },
                     download = {
                         perform(R.string.book_error) {
                             val publication = withContext(Dispatchers.IO) {

@@ -98,12 +98,25 @@ internal fun clock(value: String): Int? {
 
 internal data class AudioStream(val url: URI, val headers: Map<String, String>)
 
+private val volumePrefix = Regex("^(?:vol(?:ume)?|band)\\.?\\s*(\\d+(?:[.,]\\d+)?)\\s*[-–—]\\s*", RegexOption.IGNORE_CASE)
+private val seriesSuffix = Regex("\\s+\\((?:ein|eine)\\s+[^()]+?\\s+(\\d+)\\)$", RegexOption.IGNORE_CASE)
+
+internal fun displayAudiobookTitle(value: String): String {
+    val prefix = volumePrefix.find(value) ?: return value
+    val title = value.substring(prefix.range.last + 1).trim()
+    val suffix = seriesSuffix.find(title) ?: return title
+    val volume = prefix.groupValues[1].toIntOrNull()
+    return if (volume != null && suffix.groupValues[1].toIntOrNull() == volume) title.substring(0, suffix.range.first) else title
+}
+
 internal class Publication(
     fallbackTitle: String,
     private val resourceStream: (String) -> InputStream?,
     val audioStream: ((String) -> AudioStream)? = null,
+    preferredTitle: String? = null,
 ) {
-    constructor(file: File) : this(file.nameWithoutExtension, { path -> archiveEntry(file, path) })
+    constructor(file: File, preferredTitle: String? = null) :
+        this(file.nameWithoutExtension, { path -> archiveEntry(file, path) }, preferredTitle = preferredTitle)
     val cover: String?
     val audiobookCover: String?
     val author: String
@@ -112,6 +125,7 @@ internal class Publication(
     val packageSpineStep: Int
     private val manifest: Map<String, Item>
     val title: String
+    val audioOnly: Boolean
     val spine: List<Item>
     val contents: List<Section>
     val mime: Map<String, String>
@@ -132,7 +146,7 @@ internal class Publication(
         val container = xml(resourceStream("META-INF/container.xml") ?: error("EPUB container"))
         val packagePath = container.descendants("rootfile").first().getAttribute("full-path")
         val opf = xml(resourceStream(packagePath) ?: error("EPUB package"))
-        title = opf.descendants("title").firstOrNull()?.textContent?.trim().orEmpty().ifBlank { fallbackTitle }
+        val embeddedTitle = opf.descendants("title").firstOrNull()?.textContent?.trim().orEmpty().ifBlank { fallbackTitle }
         author = opf.descendants("creator").joinToString(", ") { it.textContent.trim() }
         description = opf.descendants("description").firstOrNull()?.textContent?.trim().orEmpty()
         val entries = opf.children("manifest").single().children("item")
@@ -165,6 +179,13 @@ internal class Publication(
             manifest[id]?.takeIf { it.path != cover && it.type.lowercase() in audioCoverTypes }?.path
         }
         spine = spineElement.children("itemref").map { manifest[it.getAttribute("idref")] ?: error("EPUB spine reference") }
+        // Audilege Server wraps bare audio in synthetic EPUB chapters for playback.
+        audioOnly = manifest["a0"]?.let { it.path.startsWith("track0.") && it.type.startsWith("audio/") } == true &&
+            spine.isNotEmpty() && spine.withIndex().all { (index, chapter) ->
+                chapter.path == "$index.xhtml" && chapter.overlay == "s$index" && manifest["s$index"]?.path == "$index.smil"
+            }
+        val displayTitle = preferredTitle?.takeIf(String::isNotBlank) ?: embeddedTitle
+        title = if (audioOnly) displayAudiobookTitle(displayTitle) else displayTitle
         sharedOverlays = spine.filter { it.overlay.isNotEmpty() }.groupingBy { it.overlay }
             .eachCount().filterValues { it > 1 }.keys
         require(spine.isNotEmpty()) { "Das EPUB enthält keine lesbaren Kapitel." }

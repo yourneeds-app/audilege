@@ -17,7 +17,10 @@ internal data class OrbitBook(
     val id: Long, val fileId: Long, val author: String, val description: String,
     val series: String = "", val narrator: String = "", val pages: Int? = null,
     val hasAudiobookCover: Boolean? = null, val podcast: Boolean = false, val coverRevision: String = "",
-)
+    val title: String = "", val category: String = "", val readAlongBookId: Long? = null, val primaryFileId: Long? = null,
+) {
+    val audioOnly get() = category == "audio" || category == "podcast" || podcast
+}
 internal interface ProgressEndpoint {
     fun progress(): JSONObject
     fun updateProgress(body: JSONObject, previous: JSONObject): ProgressReceipt?
@@ -321,8 +324,10 @@ internal class OrbitCatalog(
         catalogEntry(book, file, file, null)
     }
 
-    fun details(url: URI, resumeEpubFileId: Long? = null): OrbitBook = withSession { token ->
-        val id = url.path.substringAfterLast('/').toLong()
+    fun details(url: URI, resumeEpubFileId: Long? = null): OrbitBook =
+        details(url.path.substringAfterLast('/').toLong(), resumeEpubFileId)
+
+    fun details(id: Long, resumeEpubFileId: Long? = null): OrbitBook = withSession { token ->
         val book = json(URI("$api/books/$id"), null, token)
         val files = book.getJSONArray("files")
         val fileId = if (resumeEpubFileId == null) preferredEpubFile(files) else resumeEpubFileId.takeIf { expected ->
@@ -336,7 +341,10 @@ internal class OrbitCatalog(
                 .ifBlank { meta.text("narrator") },
             meta.optInt("pageCount").takeIf { it > 0 },
             book.optJSONObject("covers")?.takeIf { it.has("audio") }?.let { !it.isNull("audio") },
-            book.optString("category") == "podcast", book.optString("coverRevision"))
+            book.optString("category") == "podcast", book.optString("coverRevision"),
+            book.optString("title"), book.optString("category"),
+            book.optLong("readAlongBookId").takeIf { it > 0 },
+            files.objects().firstOrNull { it.optString("role") == "primary" }?.optLong("id")?.takeIf { it > 0 })
     }
 
     fun publication(book: OrbitBook, title: String): Publication = Publication(
@@ -350,6 +358,7 @@ internal class OrbitCatalog(
                 AudioStream(uri, mapOf("Authorization" to "Bearer $token", "android-allow-cross-domain-redirect" to "0"))
             }
         },
+        preferredTitle = if (book.audioOnly && !book.podcast) displayAudiobookTitle(book.title) else book.title,
     )
 
     fun cover(id: Long): InputStream = withSession { token ->

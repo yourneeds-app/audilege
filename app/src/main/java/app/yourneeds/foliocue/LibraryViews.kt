@@ -131,6 +131,7 @@ internal fun modeAction(mode: Mode, resume: Boolean) = when (mode) {
 }
 
 internal fun savedMode(prefs: SharedPreferences, file: File, publication: Publication?): Mode {
+    if (publication?.audioOnly == true) return Mode.Listen
     if (publication != null && publication.spine.none { it.overlay.isNotBlank() }) return Mode.Read
     return Mode.entries.getOrElse(prefs.getInt("${keyOf(file.absolutePath)}.mode", 0)) { Mode.Follow }
 }
@@ -205,7 +206,7 @@ internal fun DetailScreen(
     val sectionIndex = prefs.getInt("$key.chapter",0)
     val hasAudio = publication?.spine?.any { it.overlay.isNotBlank() } == true
     val podcast = book.entry.category == "podcast"
-    val audioOnly = book.entry.category == "audio" || podcast
+    val audioOnly = book.entry.category == "audio" || podcast || publication?.audioOnly == true
     val series = book.entry.series.ifBlank { online?.detail?.series.orEmpty() }
     var choice by remember(book, started) { mutableStateOf(if (audioOnly) Mode.Listen else savedMode(prefs, book.localFile, publication)) }
     var confirm by remember(book) { mutableStateOf(false) }
@@ -276,6 +277,11 @@ internal fun DetailScreen(
                                     Text(stringResource(text), style = MaterialTheme.typography.labelMedium)
                                 }
                             }
+                        }
+                    }
+                    if (audioOnly && online?.detail?.readAlongBookId != null) {
+                        TextButton(onClick = { open(Mode.Follow, false) }, enabled = !busy) {
+                            Text(stringResource(R.string.shelf_follow))
                         }
                     }
                 }

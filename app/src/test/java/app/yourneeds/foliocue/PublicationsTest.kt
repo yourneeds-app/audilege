@@ -4,6 +4,8 @@ import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Rule
@@ -32,6 +34,23 @@ class PublicationsTest {
         assertThrows(IllegalArgumentException::class.java) {
             xml("""<!DOCTYPE x [<!ENTITY local SYSTEM "file:///secret">]><x>&local;</x>""".byteInputStream())
         }
+    }
+
+    @Test fun recognizesGeneratedAudioAndCleansAnOldEmbeddedVolumeTitle() {
+        val entries = mapOf(
+            "META-INF/container.xml" to """<container><rootfile full-path="book.opf"/></container>""",
+            "book.opf" to """<package><metadata><title>Vol 14 - Fiction (Ein Beispiel-Krimi 14)</title></metadata>
+                <manifest><item id="p0" href="0.xhtml" media-type="application/xhtml+xml" media-overlay="s0"/>
+                <item id="s0" href="0.smil" media-type="application/smil+xml"/>
+                <item id="a0" href="track0.mp3" media-type="audio/mpeg"/></manifest>
+                <spine><itemref idref="p0"/></spine></package>""",
+        )
+        val load: (String) -> java.io.InputStream? = { entries[it]?.byteInputStream() }
+        val book = Publication("Fallback", load)
+        assertTrue(book.audioOnly)
+        assertEquals("Fiction", book.title)
+        assertEquals("Corrected title", Publication("Fallback", load, preferredTitle = "Corrected title").title)
+        assertEquals("Fiction (Extended edition)",displayAudiobookTitle("Vol 14 - Fiction (Extended edition)"))
     }
 
     @Test fun parsesSpineContentsAndVeryShortWords() {
@@ -71,6 +90,7 @@ class PublicationsTest {
             }
         }
         val book = Publication(file)
+        assertFalse(book.audioOnly)
         assertEquals("Fictional test book", book.title)
         assertEquals(Section("OPS/text/one.xhtml", "Chapter one", "begin"), book.contents.single())
         val cues = book.cues(book.spine.single())
