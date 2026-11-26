@@ -4,13 +4,14 @@ import java.io.File
 import java.io.InputStream
 
 internal fun listeningCoverKey(file: File, book: Publication, online: OnlineBook?): String =
-    "listen:${file.absolutePath}:${online?.detail?.id}:${online?.detail?.fileId}:${book.audioStream != null}:${online?.detail?.hasAudiobookCover}"
+    "listen:${file.absolutePath}:${online?.detail?.id}:${online?.detail?.fileId}:${book.audioStream != null}:${online?.detail?.hasAudiobookCover}:${online?.detail?.coverRevision}"
 
 internal fun listeningCoverSources(book: Publication, online: OnlineBook?): List<() -> InputStream?> = buildList {
     val serverCover: (() -> InputStream)? = online?.takeUnless { it.detail.hasAudiobookCover == false }?.let {
         { it.catalog.audiobookCover(it.detail.id) }
     }
-    val preferServerCover = book.audioStream != null && online?.detail?.hasAudiobookCover == true
+    val preferServerCover = online?.detail?.podcast == true ||
+        (book.audioStream != null && online?.detail?.hasAudiobookCover == true)
     if (preferServerCover && serverCover != null) add(serverCover)
     book.audiobookCover?.let { path -> add { book.open(path) } }
     if (!preferServerCover && serverCover != null) add(serverCover)

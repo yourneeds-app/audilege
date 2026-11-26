@@ -74,7 +74,7 @@ internal object OfflineBooks {
         if (saved.size != 2) return null
         val id = saved[0].toLongOrNull()?.takeIf { it > 0 } ?: return null
         val fileId = saved[1].toLongOrNull()?.takeIf { it > 0 } ?: return null
-        return OnlineBook(catalog, OrbitBook(id, fileId, "", ""))
+        return OnlineBook(catalog, OrbitBook(id, fileId, "", "", podcast = preferences.contains("podcast.$bookKey")))
     }
 
     suspend fun flush(preferences: SharedPreferences, folder: File, catalog: OrbitCatalog) = withContext(Dispatchers.IO) {

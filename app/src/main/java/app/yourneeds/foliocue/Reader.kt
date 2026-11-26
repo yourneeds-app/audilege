@@ -633,7 +633,7 @@ internal class Narration(
                 // The platform media clock can briefly report a backwards step between polls.
                 highlightPositionMs = maxOf(highlightPositionMs, position)
                 val word = timeline.fragmentAt(highlightPositionMs, delayMs)
-                val phrase = word ?: timeline.fragmentAt(highlightPositionMs, delayMs, gapLimitMs = 1500)
+                val phrase = timeline.fragmentAt(highlightPositionMs, delayMs - 400, gapLimitMs = 1500) ?: word
                 mark(word, phrase)
             }
         }

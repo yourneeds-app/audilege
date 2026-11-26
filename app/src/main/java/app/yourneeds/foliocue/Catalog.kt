@@ -57,6 +57,7 @@ internal data class CatalogEntry(
     val narrator: String = "", val played: Boolean = false,
     val series: String = "", val volume: String = "", val companionId: Long? = null,
     val resumeMode: Mode? = null, val resumeChapter: Int? = null, val updated: Long? = null,
+    val coverRevision: String = "",
 )
 internal data class CatalogPage(val entries: List<CatalogEntry>, val next: URI?)
 internal class CatalogAccessException(val messageId: Int) : IllegalStateException()

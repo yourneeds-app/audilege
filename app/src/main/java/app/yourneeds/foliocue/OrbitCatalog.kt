@@ -16,7 +16,7 @@ internal class OrbitHttp(val status: Int) : Exception("BookOrbit HTTP $status")
 internal data class OrbitBook(
     val id: Long, val fileId: Long, val author: String, val description: String,
     val series: String = "", val narrator: String = "", val pages: Int? = null,
-    val hasAudiobookCover: Boolean? = null,
+    val hasAudiobookCover: Boolean? = null, val podcast: Boolean = false, val coverRevision: String = "",
 )
 internal interface ProgressEndpoint {
     fun progress(): JSONObject
@@ -233,6 +233,7 @@ internal class OrbitCatalog(
         val title = book.optString("title").ifBlank { book.optJSONObject("metadata")?.optString("title").orEmpty() }
         return CatalogEntry(title.ifBlank { "#$id" }, URI("$api/books/$id"), true, author(book),
             editionFileId = edition, primaryFileId = primary, readingPercent = percent, category = book.optString("category"),
+            coverRevision = book.optString("coverRevision"),
             narrator = book.optJSONObject("metadata")?.optString("narrator").orEmpty(),
             played = book.optBoolean("played"),
             series = book.optJSONObject("metadata")?.optString("series").orEmpty(),
@@ -334,7 +335,8 @@ internal class OrbitCatalog(
             people(meta, "narrators").ifBlank { audioMeta?.let { people(it, "narrators") }.orEmpty() }
                 .ifBlank { meta.text("narrator") },
             meta.optInt("pageCount").takeIf { it > 0 },
-            book.optJSONObject("covers")?.takeIf { it.has("audio") }?.let { !it.isNull("audio") })
+            book.optJSONObject("covers")?.takeIf { it.has("audio") }?.let { !it.isNull("audio") },
+            book.optString("category") == "podcast", book.optString("coverRevision"))
     }
 
     fun publication(book: OrbitBook, title: String): Publication = Publication(

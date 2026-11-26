@@ -183,7 +183,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
             if (matched) storageRevision++
         }
     }
-    fun coverKey(entry: CatalogEntry) = "${selected?.id}:${entry.url}"
+    fun coverKey(entry: CatalogEntry) = "${selected?.id}:${entry.url}:${entry.coverRevision}"
     fun cover(entry: CatalogEntry): InputStream? = when (catalog) {
         is OrbitCatalog -> entry.url.path.substringAfterLast('/').toLongOrNull()?.let(catalog::cover)
         is Catalog -> entry.coverUrl?.let(catalog::cover)
