@@ -44,6 +44,19 @@ class CueTimelineTest {
         assertNull(timeline.fragmentAt(365))
     }
 
+    @Test fun phraseHoldsThroughASpokenPauseAndChangesAtTheNextCue() {
+        val timeline = CueTimeline(listOf(
+            Cue("phrase1", "track", 0, 220),
+            Cue("phrase2", "track", 680, 950),
+            Cue("otherTrack", "next", 0, 800),
+        ), 0)
+        assertEquals(CueAdvance.CONTINUE, timeline.advance(500, false))
+        assertNull(timeline.fragmentAt(500))
+        assertEquals("phrase1", timeline.fragmentAt(500, gapLimitMs = 1500))
+        assertEquals("phrase2", timeline.fragmentAt(680, gapLimitMs = 1500))
+        assertNull(timeline.fragmentAt(980, gapLimitMs = 1500))
+    }
+
     @Test fun adjustsTheHighlightWithoutChangingThePlayingCueOrCrossingTracks() {
         val timeline = CueTimeline(listOf(
             Cue("one", "part.mp3", 0, 200),

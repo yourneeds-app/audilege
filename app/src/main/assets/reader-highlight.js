@@ -1,10 +1,12 @@
 (() => {
-    const boundaries = new WeakMap();
+    let boundaries = new WeakMap(), pauseIds = new Set();
     const key = 'audilege-sentence';
     let activeRange = null;
     let companions = new Map(), marked = new Set();
-    window.audilegeTimedWords = ids => {
+    window.audilegeTimedWords = (ids, pauses = []) => {
         const timed = new Set(ids);
+        pauseIds = new Set(pauses);
+        boundaries = new WeakMap();
         companions = new Map();
         for (const sentence of document.querySelectorAll('[epub\\:type~="storyteller:sentence-span"]')) {
             if (timed.has(sentence.id)) continue;
@@ -31,8 +33,15 @@
             }
         }
         const text = nodes.map(n => n.node.data).join('');
-        const segments = new Intl.Segmenter(document.documentElement.lang || undefined, {granularity: 'sentence'}).segment(text);
-        const result = {nodes, segments};
+        const segments = globalThis.Intl?.Segmenter ?
+            new Intl.Segmenter(document.documentElement.lang || undefined, {granularity: 'sentence'}).segment(text) : null;
+        const cuts = new Map();
+        if (pauseIds.size) for (const part of nodes) {
+            for (let parent = part.node.parentElement; parent && parent !== block; parent = parent.parentElement) {
+                if (pauseIds.has(parent.id) && !cuts.has(parent.id)) cuts.set(parent.id, part.from);
+            }
+        }
+        const result = {nodes, segments, text, cuts: [...cuts.values()]};
         boundaries.set(block, result);
         return result;
     }
@@ -44,38 +53,42 @@
         return null;
     }
 
-    function markRange(word) {
-        if (!globalThis.CSS?.highlights || !globalThis.Highlight || !Intl.Segmenter) return false;
-        const block = word.closest('p,li,h1,h2,h3,h4,h5,h6,blockquote,figcaption') || word.parentElement;
-        if (!block) return false;
-        const {nodes, segments} = sentenceRanges(block);
-        const hit = nodes.find(n => word.contains(n.node));
+    function markRange(word, phrase, sentence) {
+        if (!globalThis.CSS?.highlights || !globalThis.Highlight) return false;
+        const block = phrase && sentence ? sentence :
+            word.closest('p,li,h1,h2,h3,h4,h5,h6,blockquote,figcaption') || word.parentElement;
+        if (!block || (phrase && sentence === word)) return false;
+        const {nodes, segments, text, cuts} = sentenceRanges(block);
+        const hit = nodes.find(n => word.contains(n.node) && /\S/u.test(n.node.data));
         if (!hit) return false;
-        const part = segments.containing(hit.from);
+        const offset = hit.from + hit.node.data.search(/\S/u);
+        const part = phrase && sentence ? {index: 0, segment: text} : segments?.containing(offset);
         if (!part) return false;
-        if (activeRange?.block === block && activeRange.start === part.index) return true;
-        const end = part.index + part.segment.length;
-        const first = nodes.find(n => n.to > part.index), last = nodes.find(n => n.to >= end);
+        let from = part.index, to = from + part.segment.length;
+        if (phrase) [from, to] = audilegePhraseBounds(text, from, to, offset, cuts);
+        if (activeRange?.block === block && activeRange.start === from && activeRange.end === to) return true;
+        const first = nodes.find(n => n.to > from), last = nodes.find(n => n.to >= to);
         if (!first || !last) return false;
         const range = new Range();
-        range.setStart(first.node, part.index - first.from);
-        range.setEnd(last.node, end - last.from);
+        range.setStart(first.node, from - first.from);
+        range.setEnd(last.node, to - last.from);
         CSS.highlights.set(key, new Highlight(range));
-        activeRange = {block, start: part.index};
+        activeRange = {block, start: from, end: to};
         return true;
     }
 
-    window.audilegeHighlight = (id, sentence, follow) => {
+    window.audilegeHighlight = (id, unit, follow) => {
         const word = id ? document.getElementById(id) : null;
-        const target = word && sentence ? sourceSentence(word) : word;
-        const usesRange = sentence && !target && word && markRange(word);
+        const phrase = unit === 'phrase';
+        const sentence = word && (phrase || unit === 'sentence' || unit === true) ? sourceSentence(word) : null;
+        const usesRange = word && (phrase || ((unit === 'sentence' || unit === true) && !sentence)) && markRange(word, phrase, sentence);
         if (!usesRange && activeRange) {
             CSS.highlights.delete(key);
             activeRange = null;
         }
         const next = new Set();
-        if (!usesRange && word) next.add(target || word);
-        if (!sentence && word) for (const node of companions.get(word.id) || []) next.add(node);
+        if (!usesRange && word) next.add(sentence || word);
+        if ((unit === "word" || unit === false) && word) for (const node of companions.get(word.id) || []) next.add(node);
         for (const node of marked) if (!next.has(node)) node.classList.remove('foliocue-current');
         for (const node of next) if (!marked.has(node)) node.classList.add('foliocue-current');
         marked = next;

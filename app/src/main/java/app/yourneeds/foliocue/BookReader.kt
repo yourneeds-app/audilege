@@ -109,7 +109,10 @@ internal fun BookReader(
     val bookmarkLock = remember(bookKey) { kotlinx.coroutines.sync.Mutex() }
     var selectedPassage by remember { mutableStateOf<Pair<Int, PagePassage>?>(null) }
     var highlightDelay by remember { mutableIntStateOf(prefs.getInt("$bookKey.highlightDelay", 0).coerceIn(-1500, 1500)) }
-    var sentenceMark by remember { mutableStateOf(prefs.getBoolean("highlightSentence", false)) }
+    var highlightUnit by remember {
+        mutableStateOf(HighlightUnit.entries.firstOrNull { it.wire == prefs.getString("highlightUnit", null) }
+            ?: if (prefs.getBoolean("highlightSentence", false)) HighlightUnit.Sentence else HighlightUnit.Word)
+    }
     var speed by remember { mutableFloatStateOf(prefs.getFloat("speed", 1f).coerceIn(0.75f, 2f)) }
     var controls by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<Int?>(null) }
@@ -469,16 +472,22 @@ internal fun BookReader(
         val item = book.spine[displayed.index]
         if (mode == Mode.Follow && page.chapterPath == item.path) {
             val encoded = withContext(Dispatchers.IO) {
-                try { org.json.JSONArray(book.cues(item).mapNotNull { it.fragment }).toString() }
+                try {
+                    val timed = book.cues(item)
+                    val pauses = timed.zipWithNext().mapNotNull { (a, b) ->
+                        b.fragment?.takeIf { a.audio == b.audio && b.start - a.end >= 200 }
+                    }
+                    org.json.JSONArray(timed.mapNotNull { it.fragment }).toString() to org.json.JSONArray(pauses).toString()
+                }
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) { null }
             }
-            if (encoded != null) page.timedWords(encoded)
+            if (encoded != null) page.timedWords(encoded.first, encoded.second)
         }
     }
-    LaunchedEffect(view, mode, attached, displayed.index, location.index, sentenceMark) {
-        snapshotFlow { playback.marker }.collect { fragment ->
-            if (attached && mode == Mode.Follow && displayed.index == location.index) view?.highlight(fragment, sentenceMark)
+    LaunchedEffect(view, mode, attached, displayed.index, location.index, highlightUnit) {
+        snapshotFlow { if (highlightUnit == HighlightUnit.Phrase) playback.phraseMarker else playback.marker }.collect { fragment ->
+            if (attached && mode == Mode.Follow && displayed.index == location.index) view?.highlight(fragment, highlightUnit)
             else view?.highlight(null)
             if (attached) playback.anchor?.let { lastAnchor = it }
         }
@@ -782,10 +791,10 @@ internal fun BookReader(
                     }
                 } else if (title == R.string.sync_timing) {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
-                        Choice(stringResource(R.string.highlight_unit), listOf(R.string.highlight_word, R.string.highlight_sentence),
-                            if (sentenceMark) 1 else 0) { selected ->
-                            sentenceMark = selected == 1
-                            prefs.edit().putBoolean("highlightSentence", sentenceMark).apply()
+                        Choice(stringResource(R.string.highlight_unit), HighlightUnit.entries.map { it.label },
+                            highlightUnit.ordinal) { selected ->
+                            highlightUnit = HighlightUnit.entries[selected]
+                            prefs.edit().putString("highlightUnit", highlightUnit.wire).apply()
                         }
                         Text(stringResource(R.string.sync_timing_hint))
                         Text(stringResource(R.string.sync_timing_value, highlightDelay), Modifier.padding(top = 8.dp))

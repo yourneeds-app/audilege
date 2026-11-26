@@ -58,6 +58,8 @@ internal object AudilegePlayback {
         private set
     var noNarration by mutableStateOf(false)
         private set
+    var phraseMarker by mutableStateOf<String?>(null)
+        private set
     var marker by mutableStateOf<String?>(null)
         private set
     val anchor get() = narration?.anchor ?: heldAnchor
@@ -250,6 +252,7 @@ internal object AudilegePlayback {
             replayUntilMs = 0
         }
         marker = null
+        phraseMarker = null
         if (elapsedOverride == null) progress = null
         failed = false
         noNarration = false
@@ -291,7 +294,7 @@ internal object AudilegePlayback {
                 val marked = resolvedAnchor?.let { target -> marks.indexOfFirst { it.fragment == target }.takeIf { it >= 0 } }
                 val saved = prefs?.getInt("$key.cue.$index", 0) ?: 0
                 val fallback = if (resumeSaved && anchor == null && cfi == null) saved else 0
-                val engine = Narration(ctx, marks, marked ?: fallback, { marker = it }, ::onFailure, remoteGeneration) {
+                val engine = Narration(ctx, marks, marked ?: fallback, { word, phrase -> marker = word; phraseMarker = phrase }, ::onFailure, remoteGeneration) {
                     localEqualizerUnavailable = it
                 }
                 narration = engine
@@ -499,6 +502,7 @@ internal object AudilegePlayback {
         listeningMeter.reset()
         if (engine.seek(elapsedMs)) attach(opened, engine)
         marker = engine.anchor
+        phraseMarker = engine.anchor
         progress = engine.progress()
         checkpoint()
         service?.refresh(force = true)
@@ -689,6 +693,7 @@ internal object AudilegePlayback {
         noNarration = false
         loading = false
         marker = null
+        phraseMarker = null
         progress = null
         sleep(0)
         service?.stopSession()

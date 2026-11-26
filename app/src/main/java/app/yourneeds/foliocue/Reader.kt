@@ -21,6 +21,12 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import org.json.JSONObject
 
+internal enum class HighlightUnit(val wire: String, val label: Int) {
+    Word("word", R.string.highlight_word),
+    Phrase("phrase", R.string.highlight_phrase),
+    Sentence("sentence", R.string.highlight_sentence),
+}
+
 internal class ReaderPage(
     context: Context,
     publication: Publication,
@@ -48,11 +54,11 @@ internal class ReaderPage(
     var onTurnAtEdge: (Int) -> Unit = {}
     var onPageError: () -> Unit = {}
     private var css = ""
-    private data class Mark(val anchor: String?, val sentence: Boolean)
-    private var currentMark = Mark(null, false)
+    private data class Mark(val anchor: String?, val unit: HighlightUnit)
+    private var currentMark = Mark(null, HighlightUnit.Word)
     private var submittedMark: Mark? = null
     private var markInFlight = false
-    private var timedIds: String? = null
+    private var timedIds: Pair<String, String>? = null
     private var closed = false
     private var readyToShow: (() -> Unit)? = null
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
@@ -117,6 +123,7 @@ internal class ReaderPage(
 
             override fun onPageFinished(view: WebView, url: String) {
                 evaluateJavascript(context.assets.open("reader-pages.js").bufferedReader().use { it.readText() }, null)
+                evaluateJavascript(context.assets.open("reader-phrases.js").bufferedReader().use { it.readText() }, null)
                 evaluateJavascript(context.assets.open("reader-highlight.js").bufferedReader().use { it.readText() }, null)
                 submittedMark = null
                 applyAppearance()
@@ -124,7 +131,7 @@ internal class ReaderPage(
                     override fun onComplete(requestId: Long) {
                         navigateToStart()
                         initialized = true
-                        timedIds?.let(::timedWords)
+                        timedIds?.let { (words, pauses) -> timedWords(words, pauses) }
                         onReadingActivity()
                         flushHighlight()
                         readyToShow?.invoke()
@@ -396,17 +403,17 @@ internal class ReaderPage(
         evaluateJavascript(if (paged) "window.audilegePages?.reveal($target)" else "$target?.scrollIntoView()") { refreshPages() }
     }
 
-    fun timedWords(encodedIds: String) {
-        timedIds = encodedIds
+    fun timedWords(encodedIds: String, encodedPauses: String) {
+        timedIds = encodedIds to encodedPauses
         if (!closed && initialized) {
-            evaluateJavascript("window.audilegeTimedWords?.($encodedIds)", null)
+            evaluateJavascript("window.audilegeTimedWords?.($encodedIds, $encodedPauses)", null)
             submittedMark = null
             flushHighlight()
         }
     }
 
-    fun highlight(id: String?, sentence: Boolean = false) {
-        currentMark = Mark(id, sentence)
+    fun highlight(id: String?, unit: HighlightUnit = HighlightUnit.Word) {
+        currentMark = Mark(id, unit)
         flushHighlight()
     }
 
@@ -415,7 +422,7 @@ internal class ReaderPage(
         submittedMark = currentMark
         markInFlight = true
         val target = currentMark.anchor?.let(JSONObject::quote) ?: "null"
-        evaluateJavascript("window.audilegeHighlight?.($target, ${currentMark.sentence}, $followAudio)") {
+        evaluateJavascript("window.audilegeHighlight?.($target, ${JSONObject.quote(currentMark.unit.wire)}, $followAudio)") {
             markInFlight = false
             flushHighlight()
         }
@@ -433,7 +440,7 @@ internal class Narration(
     private val context: Context,
     private val cues: List<Cue>,
     startIndex: Int,
-    private val onMark: (String?) -> Unit,
+    private val onMark: (String?, String?) -> Unit,
     private val onFailure: () -> Unit,
     private val senderGeneration: Long? = null,
     onEqualizerUnavailable: (Boolean) -> Unit = {},
@@ -470,7 +477,7 @@ internal class Narration(
     private var wantsPlayback = true
     var finished = false
         private set
-    private var highlighted: String? = null
+    private var highlighted: Pair<String?, String?> = null to null
     private var highlightPositionMs = 0
 
     init { tonePrefs.registerOnSharedPreferenceChangeListener(toneListener) }
@@ -625,16 +632,19 @@ internal class Narration(
             CueAdvance.CONTINUE -> {
                 // The platform media clock can briefly report a backwards step between polls.
                 highlightPositionMs = maxOf(highlightPositionMs, position)
-                mark(timeline.fragmentAt(highlightPositionMs, delayMs))
+                val word = timeline.fragmentAt(highlightPositionMs, delayMs)
+                val phrase = word ?: timeline.fragmentAt(highlightPositionMs, delayMs, gapLimitMs = 1500)
+                mark(word, phrase)
             }
         }
         return false
     }
 
-    private fun mark(value: String?) {
+    private fun mark(word: String?, phrase: String? = word) {
+        val value = word to phrase
         if (highlighted != value) {
             highlighted = value
-            onMark(value)
+            onMark(word, phrase)
         }
     }
 

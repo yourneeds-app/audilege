@@ -127,6 +127,7 @@
     <string name="sync_timing">Mitlesen anpassen</string>
     <string name="highlight_unit">Text markieren</string>
     <string name="highlight_word">Wort</string>
+    <string name="highlight_phrase">Sinnabschnitt</string>
     <string name="highlight_sentence">Satz</string>
     <string name="sync_timing_hint">Verschiebt die Markierung für dieses Buch nach vorn oder hinten. Die Tonspur läuft an derselben Stelle weiter.</string>
     <string name="sync_timing_value">Versatz der Markierung: %1$+d ms</string>

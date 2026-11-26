@@ -127,6 +127,7 @@
     <string name="sync_timing">Read-along settings</string>
     <string name="highlight_unit">Highlight text</string>
     <string name="highlight_word">Word</string>
+    <string name="highlight_phrase">Phrase</string>
     <string name="highlight_sentence">Sentence</string>
     <string name="sync_timing_hint">Move the highlight earlier or later for this book. The audio keeps playing at the same position.</string>
     <string name="sync_timing_value">Highlight offset: %1$+d ms</string>

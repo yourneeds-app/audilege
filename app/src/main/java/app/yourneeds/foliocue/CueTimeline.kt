@@ -22,7 +22,8 @@ internal class CueTimeline(private val cues: List<Cue>, restoredIndex: Int) {
         return CueAdvance.CONTINUE
     }
 
-    fun fragmentAt(positionMs: Int, highlightDelayMs: Int = 0): String? {
+    fun fragmentAt(positionMs: Int, highlightDelayMs: Int = 0,
+                   gapLimitMs: Int = BRIEF_HIGHLIGHT_GAP_MS): String? {
         val target = positionMs.toLong() - highlightDelayMs
         var at = index
         while (target < cues[at].start && at > 0 && continuous(at - 1, at)) at--
@@ -32,7 +33,7 @@ internal class CueTimeline(private val cues: List<Cue>, restoredIndex: Int) {
         // Keep the previous mark through short gaps between words on the same track.
         if (at > 0 && target < clip.start && continuous(at - 1, at)) {
             val previousEnd = visibleEnd(at - 1)
-            if (target >= previousEnd && clip.start - previousEnd <= BRIEF_HIGHLIGHT_GAP_MS)
+            if (target >= previousEnd && clip.start - previousEnd <= gapLimitMs)
                 return cues[at - 1].fragment
         }
         return null
