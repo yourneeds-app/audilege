@@ -10,11 +10,8 @@ internal fun listeningCoverSources(book: Publication, online: OnlineBook?): List
     val serverCover: (() -> InputStream)? = online?.takeUnless { it.detail.hasAudiobookCover == false }?.let {
         { it.catalog.audiobookCover(it.detail.id) }
     }
-    val preferServerCover = online?.detail?.podcast == true ||
-        (book.audioStream != null && online?.detail?.hasAudiobookCover == true)
-    if (preferServerCover && serverCover != null) add(serverCover)
+    if (serverCover != null) add(serverCover)
     book.audiobookCover?.let { path -> add { book.open(path) } }
-    if (!preferServerCover && serverCover != null) add(serverCover)
     if (book.audioStream == null) book.cover?.let { path -> add { book.open(path) } }
     online?.let { add { it.catalog.cover(it.detail.id) } }
     if (book.audioStream != null) book.cover?.let { path -> add { book.open(path) } }

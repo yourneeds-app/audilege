@@ -151,12 +151,14 @@ internal fun continueReadingBooks(
                 entry?.category == "audilege" -> Mode.Follow
                 else -> Mode.Read
             }
-            val item = ShelfItem(edition.file.absolutePath + if (mode == Mode.Listen) "#audio" else "", publication?.title ?: entry?.title.orEmpty(),
+            val title = entry?.title?.takeIf(String::isNotBlank) ?: publication?.title.orEmpty()
+            val artworkKey = "${edition.file.absolutePath}#${mode.name}:${entry?.coverRevision.orEmpty()}"
+            val item = ShelfItem(artworkKey, title,
                 publication?.author ?: entry?.author.orEmpty(), {
                     val audio = if (mode == Mode.Listen) {
-                        publication?.audiobookCover?.let(publication::open) ?: entry?.url?.path?.substringAfterLast('/')?.toLongOrNull()?.let { id ->
+                        entry?.url?.path?.substringAfterLast('/')?.toLongOrNull()?.let { id ->
                             runCatching { orbit?.audiobookCover(id) }.getOrNull()
-                        }
+                        } ?: publication?.audiobookCover?.let(publication::open)
                     } else null
                     audio ?: publication?.cover?.let(publication::open) ?: entry?.let(cover)
                 }, { resume(edition.local, entry, mode) }, category = if (OfflineBooks.isPodcast(reader, edition.file)) "podcast" else entry?.category.orEmpty())
