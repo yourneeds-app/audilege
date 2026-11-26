@@ -3,6 +3,7 @@ package app.yourneeds.foliocue
 import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
+import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
@@ -111,7 +112,11 @@ internal class AirPlayTrack(
         decoder = player
         player.volume = 0f
         player.addListener(object : Player.Listener {
-            override fun onPlayerError(error: PlaybackException) { if (decoder === player) onFailure() }
+            override fun onPlayerError(error: PlaybackException) {
+                if (decoder !== player) return
+                Log.w("AudilegeAirPlay", "Audio decoder failed: ${error.errorCodeName}")
+                onFailure()
+            }
             override fun onPlaybackStateChanged(state: Int) {
                 if (decoder === player) decoderEnded = state == Player.STATE_ENDED
             }

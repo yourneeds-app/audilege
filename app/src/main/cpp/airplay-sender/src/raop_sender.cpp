@@ -313,6 +313,9 @@ void RaopSender::discardQueuedAudio() {
     inReadFrames_ = 0;
     srcPhase_ = 0;
     if (state_ != State::Streaming) return;
+    // Keep the negotiated real-time AirPlay 2 timeline running across decoder
+    // changes, as Sonora does. A second RTSP FLUSH can leave receivers muted.
+    if (airplay2_) return;
     std::fill(backlogSeq_.begin(), backlogSeq_.end(), -1);
     firstAudio_ = true;
     Extra headers = {{"RTP-Info", "seq=" + std::to_string(seq_)
@@ -423,8 +426,7 @@ void RaopSender::onPinTimeout_() {
 void RaopSender::onFeedbackTimer_() {
     if (state_ != State::Streaming) return;
     if (airplay2_) {
-        // Audilege: a receiver that disappeared from Wi-Fi may never close TCP.
-        // Stop the playback clock after four consecutive unanswered probes.
+        // A receiver that disappeared from Wi-Fi may never close TCP.
         if (std::count(pendingMethods_.begin(), pendingMethods_.end(), "FEEDBACK") >= 4) {
             fail_("Receiver stopped responding");
             return;

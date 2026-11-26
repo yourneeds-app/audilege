@@ -10,8 +10,8 @@ android {
         applicationId 'app.yourneeds.foliocue'
         minSdk 28
         targetSdk 35
-        versionCode 49
-        versionName '0.4.41'
+        versionCode 50
+        versionName '0.4.42'
     }
     buildFeatures { compose true }
     buildTypes {

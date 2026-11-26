@@ -11,6 +11,7 @@
 #include "ring_buffer.h"
 #include <memory>
 #include <arpa/inet.h>
+#include <android/log.h>
 extern "C" {
 #include "ptp/ap2_ptp.h"
 }
@@ -21,6 +22,7 @@ std::mutex lifecycle, data;
 std::thread worker;
 std::atomic<bool> stop{false}, connected{false}, failed{false};
 std::atomic<bool> playing{false};
+std::atomic<bool> pcmReceived{false};
 std::atomic<int> rate{44100}, volume{-1};
 std::atomic<int> receiverDelayMs{1500};
 // ExoPlayer primes its AudioTrack while paused, before completing a seek.
@@ -50,6 +52,7 @@ extern "C" JNIEXPORT void JNICALL JNI_METHOD(nativeConnect)(JNIEnv* env, jobject
         jstring hostValue, jint port, jstring nameValue, jstring identityValue) {
     std::lock_guard lock(lifecycle); endSession();
     failed = false; flushed = 0; flushRequest = 0; staged = 0; rate = 44100;
+    pcmReceived = false;
     auto host = str(env, hostValue), name = str(env, nameValue), identity = str(env, identityValue);
     { std::lock_guard state(data); title.clear(); artist.clear(); metadataChanged = false; }
     stop = false; volume = -1; receiverDelayMs = 1500;
@@ -78,12 +81,21 @@ extern "C" JNIEXPORT void JNICALL JNI_METHOD(nativeConnect)(JNIEnv* env, jobject
             receiverDelayMs = 2000;
             return clockId;
         };
-        events.launched = [](bool ok, const std::string&) {
+        events.launched = [&](bool ok, const std::string&) {
+            __android_log_write(ANDROID_LOG_INFO, "AudilegeAirPlay", !ok ? "Receiver setup failed" :
+                (ptp ? "Receiver connected using PTP" : "Receiver connected using NTP"));
             connected = ok;
             if (!ok) { failed = true; stop = true; }
         };
         events.closed = [] { connected = false; failed = true; stop = true; };
         events.pinRequired = [](const std::string&) { failed = true; stop = true; };
+        bool audioSent = false;
+        events.audioFrames = [&](size_t frames) {
+            if (frames != 0 && !audioSent) {
+                audioSent = true;
+                __android_log_write(ANDROID_LOG_INFO, "AudilegeAirPlay", "Sender started reading PCM from the player");
+            }
+        };
         RaopSender sender(loop, events);
         sender.setStrictReceiverAuth(true);
         sender.setRealtimePcm(false);
@@ -155,5 +167,7 @@ extern "C" JNIEXPORT jboolean JNICALL JNI_METHOD(nativeWrite)(JNIEnv* env, jobje
     if (!pcm) return false;
     bool accepted = ring.tryPush(std::span<const int16_t>(pcm, count));
     env->ReleaseShortArrayElements(samples, pcm, JNI_ABORT);
+    if (accepted && count > 0 && !pcmReceived.exchange(true))
+        __android_log_write(ANDROID_LOG_INFO, "AudilegeAirPlay", "First PCM block accepted");
     return accepted;
 }
