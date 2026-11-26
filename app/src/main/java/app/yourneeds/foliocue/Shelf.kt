@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -137,6 +138,7 @@ private fun ContinueReading(books: List<RecentBook>, covers: CoverStore, enabled
 
 private fun RecentBook.percentLabel() = fraction?.let { "${(it * 100).roundToInt()} %" }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<RecentBook>, covers: CoverStore, busy: Boolean, loading: Boolean,
     sort: Int, setSort: (Int) -> Unit, category: String, setCategory: (String) -> Unit,
@@ -144,7 +146,7 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
     header: @Composable () -> Unit, empty: @Composable () -> Unit, query: String, setQuery: (String) -> Unit,
     showKey: String, openPodcasts: (String) -> Unit, importEpub: () -> Unit,
     facetAuthor: String, facetSeries: String, facetNarrator: String, clearFacet: () -> Unit,
-    status: ShelfStatus, setStatus: (ShelfStatus) -> Unit) {
+    status: ShelfStatus, setStatus: (ShelfStatus) -> Unit, onRefresh: () -> Unit) {
     val canSearch = tab == ShelfTab.Home || tab == ShelfTab.Library
     var search by rememberSaveable(tab) { mutableStateOf(false) }
     var focusSearch by remember(tab) { mutableStateOf(false) }
@@ -250,6 +252,7 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                 maxWidth < 520.dp -> GridCells.Fixed(3)
                 else -> GridCells.Adaptive(136.dp)
             }
+            PullToRefreshBox(isRefreshing = loading, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
             LazyVerticalGrid(columns, state = grid, contentPadding = PaddingValues(start = AudilegeLayout.pageInset, end = AudilegeLayout.pageInset, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 item(span = { GridItemSpan(maxLineSpan) }) { header() }
@@ -355,6 +358,7 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                         Text(stringResource(if (query.isBlank()) R.string.more else R.string.shelf_more_hits))
                     }
                 }
+            }
             }
         }
     }

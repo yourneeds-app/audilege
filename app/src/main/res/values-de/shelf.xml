@@ -66,4 +66,5 @@
     <string name="queue_empty">Die Warteschlange ist leer.</string>
     <string name="queue_first">Nach vorn</string>
     <string name="queue_remove">Entfernen</string>
+    <string name="statistics_open_period">Zeitraum öffnen</string>
 </resources>

@@ -71,6 +71,39 @@ internal class OrbitCatalog(
         }
     }
 
+    @Volatile private var bulkStatisticsSupported = true
+
+    override fun statisticsSnapshot(queued: List<ListeningEvent>): ListeningSyncResult? = withSession { token ->
+        if (!bulkStatisticsSupported) return@withSession null
+        val chunks = queued.chunked(200).ifEmpty { listOf(emptyList()) }
+        var result: ListeningSyncResult? = null
+        for (chunk in chunks) {
+            val body = JSONObject().put("sessions", JSONArray(chunk.map { event ->
+                event.payload().put("fileId", event.fileId).put("title", event.title)
+            }))
+            val response = try {
+                json(URI("$api/user-statistics/sync"), body, token)
+            } catch (failure: OrbitHttp) {
+                if (failure.status !in setOf(404, 405)) throw failure
+                bulkStatisticsSupported = false
+                return@withSession null
+            }
+            val receipts = response.getJSONArray("accepted")
+            val ids = (0 until receipts.length()).mapTo(mutableSetOf()) { receipts.getString(it) }
+            require(ids == chunk.mapTo(mutableSetOf()) { it.id })
+            val overview = response.getJSONObject("overview")
+            val activity = overview.getJSONObject("audilegeActivities")
+            val days = JSONObject()
+            activity.keys().forEach { kind ->
+                val part = activity.getJSONObject(kind).getJSONObject("days")
+                part.keys().forEach { day -> days.put(day, days.optLong(day) + part.getLong(day)) }
+            }
+            result = ListeningSyncResult(queued.associateBy { it.id }, emptyMap(), true,
+                statisticsZone(response.getString("timezone")).id, days, overview)
+        }
+        result
+    }
+
     override fun statisticsBooks(): List<StatisticsBook> = withSession { token ->
         val books = linkedMapOf<Long, StatisticsBook>()
         var page = 0

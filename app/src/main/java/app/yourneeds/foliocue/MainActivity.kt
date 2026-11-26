@@ -590,7 +590,14 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                                         facetAuthor = facetAuthor, facetSeries = facetSeries,
                                         facetNarrator = facetNarrator,
                                         clearFacet = { facetAuthor = ""; facetSeries = ""; facetNarrator = "" },
-                                        status = shelfStatus,setStatus = { shelfStatus = it })
+                                        status = shelfStatus,setStatus = { shelfStatus = it }, onRefresh = {
+                                            storageRevision++
+                                            if (tab != ShelfTab.Downloads && selected != null && !catalogLoading && !busy) {
+                                                problem = null
+                                                history = emptyList()
+                                                reload++
+                                            }
+                                        })
                                 }
                             }
                             if (detail != null) {

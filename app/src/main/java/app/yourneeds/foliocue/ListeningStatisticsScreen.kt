@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -28,11 +29,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import java.time.Instant
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, catalog: OrbitCatalog? = null, close: () -> Unit) {
     val store = remember { ListeningStats(context) }
@@ -90,7 +93,9 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.safeDrawingPadding()) {
             FolioBar(stringResource(R.string.listening_statistics), back = close)
-            LazyColumn(Modifier.align(Alignment.CenterHorizontally).widthIn(max = AudilegeLayout.contentWidth).fillMaxWidth(),
+            PullToRefreshBox(isRefreshing = syncing, onRefresh = { scope.launch { synchronize() } },
+                modifier = Modifier.align(Alignment.CenterHorizontally).widthIn(max = AudilegeLayout.contentWidth).fillMaxWidth().weight(1f)) {
+            LazyColumn(Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(horizontal = AudilegeLayout.pageInset, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 item {
@@ -116,14 +121,22 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
                             if ((info?.pending ?: 0) > 0) Text(stringResource(R.string.statistics_sync_collected), style = MaterialTheme.typography.bodySmall)
                             info?.timezone?.let { Text(stringResource(R.string.activity_timezone, it), style = MaterialTheme.typography.bodySmall) }
                             info?.completedBooks?.let { Text(stringResource(R.string.activity_completed_total, it), style = MaterialTheme.typography.bodySmall) }
-                            TextButton(onClick = { scope.launch { synchronize() } }, enabled = !syncing) {
-                                Text(stringResource(R.string.statistics_sync_now))
+                            if (!syncing && (info?.error != null || (info?.pending ?: 0) > 0 || (info?.lastSync ?: 0) == 0L)) {
+                                TextButton(onClick = { scope.launch { synchronize() } }) {
+                                    Text(stringResource(R.string.statistics_sync_now))
+                                }
+                            } else if (!syncing && info != null) {
+                                val locale = LocalConfiguration.current.locales[0]
+                                val last = Instant.ofEpochMilli(info.lastSync).atZone(statisticsZone(info.timezone))
+                                    .format(DateTimeFormatter.ofPattern("d.M.yyyy · HH:mm", locale))
+                                Text(last, style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
                 }
                 item {
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ActivityKind.entries.forEach { option ->
                             FilterChip(selected = kind == option, onClick = { kindName = option.name },
                                 label = { Text(stringResource(option.label)) })
@@ -191,7 +204,12 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
                     Text(pluralStringResource(R.plurals.statistics_current_streak_days, summary.currentStreak, summary.currentStreak),
                         style = MaterialTheme.typography.bodySmall)
                 }
-                item { ListeningChart(recap.bars, period) }
+                item {
+                    ListeningChart(recap.bars, period, openPeriod = if (period in listOf(ListeningPeriod.ALL, ListeningPeriod.YEAR)) { date ->
+                        anchorText = date.toString()
+                        periodName = (if (period == ListeningPeriod.ALL) ListeningPeriod.YEAR else ListeningPeriod.MONTH).name
+                    } else null)
+                }
                 if (period == ListeningPeriod.YEAR) item { ActivityCalendar(anchor.year, today, summary.history) }
                 recap.peak?.let { peak -> item {
                     val locale = LocalConfiguration.current.locales[0]
@@ -255,6 +273,7 @@ internal fun ListeningStatisticsScreen(context: Context, profile: Profile?, cata
                     }
                 }
             }
+            }
         }
     }
 }
@@ -294,7 +313,7 @@ private fun ActivityCalendar(year: Int, today: LocalDate, history: List<Listenin
 }
 
 @Composable
-private fun ListeningChart(bars: List<ListeningBar>, period: ListeningPeriod) {
+private fun ListeningChart(bars: List<ListeningBar>, period: ListeningPeriod, openPeriod: ((LocalDate) -> Unit)?) {
     var selected by remember(period, bars.map { it.start }) { mutableIntStateOf(-1) }
     val locale = LocalConfiguration.current.locales[0]
     val shortDate = remember(locale) { DateTimeFormatter.ofPattern("d.M.", locale) }
@@ -344,6 +363,9 @@ private fun ListeningChart(bars: List<ListeningBar>, period: ListeningPeriod) {
                 val bar = bars[selected]
                 Text("${bar.start.format(shortDate)}${if (bar.start != bar.end) " – ${bar.end.format(shortDate)}" else ""}: ${listeningTimeLabel(bar.millis)}",
                     style = MaterialTheme.typography.bodySmall)
+                if (openPeriod != null) TextButton(onClick = { openPeriod(bar.start) }) {
+                    Text(stringResource(R.string.statistics_open_period))
+                }
             } else Text(stringResource(R.string.statistics_chart_hint), style = MaterialTheme.typography.bodySmall)
         }
     }

@@ -66,4 +66,5 @@
     <string name="queue_empty">The queue is empty.</string>
     <string name="queue_first">Move to front</string>
     <string name="queue_remove">Remove</string>
+    <string name="statistics_open_period">Open this period</string>
 </resources>

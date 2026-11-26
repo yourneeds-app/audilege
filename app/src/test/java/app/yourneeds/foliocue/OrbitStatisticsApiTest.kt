@@ -10,7 +10,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class OrbitStatisticsApiTest {
-    @Test fun nativeAccountPostsTypedListeningSessionsAndReadsPagedBookHistory() {
+    @Test fun nativeAccountPostsTypedListeningSessionsAndReadsPagedBookHistory() = verifyProtocol(false)
+
+    @Test fun audilegeAccountUploadsAndReceivesStatisticsInOneRequest() = verifyProtocol(true)
+
+    private fun verifyProtocol(bulk: Boolean) {
         val server = ServerSocket().apply { bind(InetSocketAddress("127.0.0.1", 0)) }
         val calls = CopyOnWriteArrayList<String>()
         val failures = CopyOnWriteArrayList<Throwable>()
@@ -18,7 +22,7 @@ class OrbitStatisticsApiTest {
         val event = ListeningEvent("audilege-fixture-session", 41, 8, "Fictional title", "Fixture author", start, start + 15_000, 15_000)
         val worker = thread(isDaemon = true) {
             try {
-                repeat(7) {
+                repeat(if (bulk) 1 else 8) {
                     server.accept().use { socket ->
                         socket.soTimeout = 5000
                         val input = socket.getInputStream().bufferedReader()
@@ -29,6 +33,17 @@ class OrbitStatisticsApiTest {
                         assertEquals("Bearer fixture-access", headers["authorization"])
                         val body = buildString { repeat(headers["content-length"]?.toInt() ?: 0) { append(input.read().toChar()) } }
                         val (status, response) = when {
+                            first.startsWith("POST /api/v1/user-statistics/sync ") -> {
+                                if (!bulk) 404 to "{}"
+                                else {
+                                    val session = JSONObject(body).getJSONArray("sessions").getJSONObject(0)
+                                    assertEquals(event.id, session.getString("sessionId"))
+                                    assertEquals(8L, session.getLong("fileId"))
+                                    200 to """{"accepted":["audilege-fixture-session"],"timezone":"UTC","overview":{
+                                        "audilegeActivities":{"listen":{"days":{"2026-11-24":15000},"books":{}}},
+                                        "trackedBooks":1,"startedBooks":1,"inProgressBooks":1,"completedBooks":0}}"""
+                                }
+                            }
                             first.startsWith("GET /api/v1/auth/me ") -> 200 to """{"settings":{"timezone":"Europe/Berlin"}}"""
                             first.startsWith("GET /api/v1/user-statistics/daily-reading?") -> 200 to """[{"day":"2026-11-24","readingSeconds":15}]"""
                             first.startsWith("GET /api/v1/user-statistics/summary ") -> 200 to """{"trackedBooks":1,"startedBooks":1,"inProgressBooks":1,"completedBooks":0,"meanProgressPercent":1.0}"""
@@ -67,9 +82,9 @@ class OrbitStatisticsApiTest {
             val catalog = OrbitCatalog(profile, """{"accessToken":"fixture-access","refreshToken":"fixture-refresh"}""")
             val result = synchronizeListening(catalog, listOf(event), discover = true)
             assertEquals(setOf(event.id), result.uploaded.keys)
-            assertEquals(15_000L, result.books.getValue(41).getJSONObject("books").getJSONObject("orbit:41").getLong("millis"))
-            assertEquals(7, calls.size)
-            assertEquals("Europe/Berlin", result.timezone)
+            if (!bulk) assertEquals(15_000L, result.books.getValue(41).getJSONObject("books").getJSONObject("orbit:41").getLong("millis"))
+            assertEquals(if (bulk) 1 else 8, calls.size)
+            assertEquals(if (bulk) "UTC" else "Europe/Berlin", result.timezone)
             assertEquals(15_000L, result.serverDays!!.getLong("2026-11-24"))
             assertTrue(failures.isEmpty())
             assertNotEquals(catalog.statisticsIdentity,

@@ -137,7 +137,9 @@ internal class ListeningStats(context: Context) {
 
     fun syncInfo(profile: String, identity: String): StatisticsSyncInfo = synchronized(storageLock) {
         val account = statisticsAccount(data(profile), identity)
-        val pending = account.objectAt("outbox").length() + account.objectAt("drafts").length()
+        val drafts = account.objectAt("drafts")
+        val pending = account.objectAt("outbox").length() +
+            drafts.keys().asSequence().count { drafts.getJSONObject(it).optLong("millis") >= 10_000 }
         StatisticsSyncInfo(account.optLong("lastSync"), pending,
             account.optString("syncError").takeIf(String::isNotBlank), account.optString("timezone").takeIf(String::isNotBlank),
             account.optJSONObject("overview")?.let { if (it.has("completedBooks")) it.getInt("completedBooks") else null })

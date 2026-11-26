@@ -38,6 +38,7 @@ internal interface ListeningStatisticsEndpoint {
     fun statisticsTimezone(): String = "UTC"
     fun statisticsDaily(): JSONObject? = null
     fun statisticsOverview(): JSONObject? = null
+    fun statisticsSnapshot(queued: List<ListeningEvent>): ListeningSyncResult? = null
 }
 
 internal fun parseStatisticsSessions(body: JSONObject): ListeningSessionPage {
@@ -96,6 +97,7 @@ internal fun synchronizeListening(endpoint: ListeningStatisticsEndpoint, queued:
                                   discover: Boolean, cachedTimezone: String? = null): ListeningSyncResult {
     val duplicates = queued.groupBy { it.id }.any { it.value.size != 1 }
     require(!duplicates)
+    endpoint.statisticsSnapshot(queued)?.let { return it }
     val zone = statisticsZone(endpoint.statisticsTimezone())
     val complete = discover || (cachedTimezone != null && cachedTimezone != zone.id)
     val catalog = if (complete) endpoint.statisticsBooks().associateBy { it.id }.toMutableMap() else mutableMapOf()
