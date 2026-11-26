@@ -218,6 +218,11 @@ internal class Publication(
         return null
     }
 
+    fun nextSectionUsesAudio(index: Int, audio: String): Boolean {
+        val next = findNarratedSection(index + 1, 1) ?: return false
+        return cues(spine[next]).any { it.audio == audio }
+    }
+
     fun cues(chapter: Item): List<Cue> {
         val request = synchronized(recentCues) {
             recentCues[chapter]?.let { return it }

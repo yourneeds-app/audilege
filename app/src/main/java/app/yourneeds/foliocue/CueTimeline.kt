@@ -1,6 +1,8 @@
 package app.yourneeds.foliocue
 
 private const val BRIEF_HIGHLIGHT_GAP_MS = 150
+private const val MIN_TRACK_TAIL_MS = 250
+private const val MAX_TRACK_TAIL_MS = 15_000
 
 internal enum class CueAdvance { CONTINUE, NEXT_TRACK, SEEK, FINISHED }
 
@@ -11,8 +13,17 @@ internal class CueTimeline(private val cues: List<Cue>, restoredIndex: Int) {
 
     fun seek(index: Int) { this.index = index.coerceIn(cues.indices) }
 
-    fun advance(positionMs: Int, trackEnded: Boolean): CueAdvance {
+    /** A short unmarked tail may still contain narration. Preserve explicit clip jumps. */
+    fun unmarkedTrackTail(durationMs: Int): Int? {
+        var last = index
+        while (last < cues.lastIndex && continuous(last, last + 1)) last++
+        if (cues.drop(last + 1).any { it.audio == cue.audio }) return null
+        return last.takeIf { durationMs - cues[last].end in MIN_TRACK_TAIL_MS..MAX_TRACK_TAIL_MS }
+    }
+
+    fun advance(positionMs: Int, trackEnded: Boolean, waitForTrackEndAt: Int? = null): CueAdvance {
         while (trackEnded || positionMs >= visibleEnd(index)) {
+            if (!trackEnded && index == waitForTrackEndAt) return CueAdvance.CONTINUE
             val previous = cue
             if (index == cues.lastIndex) return CueAdvance.FINISHED
             index++

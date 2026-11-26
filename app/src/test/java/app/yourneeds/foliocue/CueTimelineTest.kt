@@ -99,4 +99,32 @@ class CueTimelineTest {
         assertEquals("next.mp3", timeline.cue.audio)
         assertEquals(CueAdvance.FINISHED, timeline.advance(300, false))
     }
+
+    @Test fun playsASeparateTracksUnmarkedTailBeforeSwitching() {
+        val timeline = CueTimeline(listOf(
+            Cue("first", "part.mp3", 0, 6_000),
+            Cue("last", "part.mp3", 6_000, 10_000),
+            Cue("next", "next.mp3", 0, 6_000),
+        ), 0)
+        val tail = timeline.unmarkedTrackTail(13_000)
+        assertEquals(1, tail)
+        assertEquals(CueAdvance.CONTINUE, timeline.advance(12_999, false, tail))
+        assertEquals("part.mp3", timeline.cue.audio)
+        assertNull(timeline.fragmentAt(12_999))
+        assertEquals(CueAdvance.NEXT_TRACK, timeline.advance(13_000, true, tail))
+        val finalTail = timeline.unmarkedTrackTail(8_000)
+        assertEquals(CueAdvance.CONTINUE, timeline.advance(7_999, false, finalTail))
+        assertEquals(CueAdvance.FINISHED, timeline.advance(8_000, true, finalTail))
+    }
+
+    @Test fun doesNotExtendAnExplicitClipWhenTheAudioIsUsedAgain() {
+        val timeline = CueTimeline(listOf(
+            Cue("part", "shared.m4b", 8_000, 10_000),
+            Cue("middle", "other.mp3", 0, 4_000),
+            Cue("return", "shared.m4b", 2_000, 4_000),
+        ), 0)
+        assertNull(timeline.unmarkedTrackTail(13_000))
+        assertEquals(CueAdvance.NEXT_TRACK, timeline.advance(10_000, false))
+        assertNull(timeline.unmarkedTrackTail(70_000))
+    }
 }

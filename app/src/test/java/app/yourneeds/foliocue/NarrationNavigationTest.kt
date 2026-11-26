@@ -58,6 +58,14 @@ class NarrationNavigationTest {
         assertEquals(2, requests.count { it == "spokenA.smil" })
     }
 
+    @Test fun recognizesSharedAudioInTheNextNarratedChapter() {
+        val book = publication()
+        val audio = book.cues(book.spine[2]).single().audio
+        assertTrue(book.nextSectionUsesAudio(2, audio))
+        assertFalse(book.nextSectionUsesAudio(2, "another.mp3"))
+        assertFalse(book.nextSectionUsesAudio(4, audio))
+    }
+
     @Test fun remainingAudioUsesKnownDurationsWithoutFetchingUnplayedChapters() {
         assertNull(publication().narrationAfter(2))
         val book = publication(withDuration = true)

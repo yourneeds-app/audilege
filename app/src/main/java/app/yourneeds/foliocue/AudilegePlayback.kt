@@ -294,7 +294,14 @@ internal object AudilegePlayback {
                 val marked = resolvedAnchor?.let { target -> marks.indexOfFirst { it.fragment == target }.takeIf { it >= 0 } }
                 val saved = prefs?.getInt("$key.cue.$index", 0) ?: 0
                 val fallback = if (resumeSaved && anchor == null && cfi == null) saved else 0
-                val engine = Narration(ctx, marks, marked ?: fallback, { word, phrase -> marker = word; phraseMarker = phrase }, ::onFailure, remoteGeneration) {
+                val engine = Narration(ctx, marks, marked ?: fallback, { word, phrase -> marker = word; phraseMarker = phrase },
+                    ::onFailure, remoteGeneration, nextSectionUsesAudio = { audio ->
+                        withContext(Dispatchers.IO) {
+                            try { publication.nextSectionUsesAudio(index, audio) }
+                            catch (cancel: CancellationException) { throw cancel }
+                            catch (_: Exception) { true } // Keep the clip boundary if the next overlay cannot be checked.
+                        }
+                    }) {
                     localEqualizerUnavailable = it
                 }
                 narration = engine

@@ -443,6 +443,7 @@ internal class Narration(
     private val onMark: (String?, String?) -> Unit,
     private val onFailure: () -> Unit,
     private val senderGeneration: Long? = null,
+    private val nextSectionUsesAudio: suspend (String) -> Boolean,
     onEqualizerUnavailable: (Boolean) -> Unit = {},
 ) {
     private val timeline = CueTimeline(cues, startIndex)
@@ -472,6 +473,7 @@ internal class Narration(
     private var prepared = false
     private var seeking = false
     private var ended = false
+    private var waitForTrackEndAt: Int? = null
     private var startMs = timeline.cue.start
     private var tempo = 1f
     private var wantsPlayback = true
@@ -534,6 +536,8 @@ internal class Narration(
                 }
                 current.prepareAsync()
             }
+            val tail = timeline.unmarkedTrackTail(current.duration)
+            if (tail != null && !nextSectionUsesAudio(audio)) waitForTrackEndAt = tail
             prepared = true
             try { current.addOnRoutingChangedListener(routed, null) } catch (_: RuntimeException) { }
             equalizer.apply(current, tone)
@@ -611,7 +615,7 @@ internal class Narration(
         val position = remote?.currentPosition ?: player?.currentPosition ?: return false
         val completed = remote?.ended ?: ended
         ended = false
-        when (timeline.advance(position, completed)) {
+        when (timeline.advance(position, completed, waitForTrackEndAt)) {
             CueAdvance.FINISHED -> {
                 finished = true
                 setPlaying(false, tempo)
@@ -660,6 +664,7 @@ internal class Narration(
         current?.release()
         highlightPositionMs = 0
         ended = false
+        waitForTrackEndAt = null
         prepared = false
         seeking = false
     }
