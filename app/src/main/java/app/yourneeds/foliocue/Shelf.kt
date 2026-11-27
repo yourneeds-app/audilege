@@ -251,7 +251,7 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val columns = when {
                 home -> GridCells.Fixed(3)
-                list -> GridCells.Fixed(1)
+                list && !seriesView -> GridCells.Fixed(1)
                 maxWidth < 360.dp -> GridCells.Fixed(2)
                 maxWidth < 520.dp -> GridCells.Fixed(3)
                 else -> GridCells.Adaptive(136.dp)
@@ -304,9 +304,22 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                 if (home && recent.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
                     ContinueReading(recent, covers, !busy)
                 }
-                val seriesCards = if (home) series.filter { it.next != null }.take(6) else series
-                if ((home || seriesView) && seriesCards.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
-                    SeriesRow(seriesCards, covers, !busy, home, browseSeries, seeSeries)
+                val continuingSeries = if (home) series.filter { it.next != null }.take(6) else emptyList()
+                if (continuingSeries.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                    ContinueSeriesRow(continuingSeries, covers, !busy, seeSeries)
+                }
+                if (seriesView) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Text(stringResource(R.string.home_series), Modifier.semantics { heading() },
+                            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    }
+                    val matches = series.filter { it.name.contains(query.trim(), ignoreCase = true) }
+                    items(matches, key = { it.name }) { row ->
+                        SeriesTile(row, covers, !busy, Modifier.fillMaxWidth()) { browseSeries(row.name) }
+                    }
+                    if (matches.isEmpty() && !busy && !loading) item(span = { GridItemSpan(maxLineSpan) }) {
+                        Text(stringResource(R.string.shelf_no_results), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
                 if ((home || podcastView) && query.isBlank() && shows.isNotEmpty() && show == null)
                     item(span = { GridItemSpan(maxLineSpan) }) {
@@ -349,7 +362,9 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                             stringResource(if (list) R.string.shelf_grid else R.string.shelf_list)) }
                     }
                 }
-                items(if (home) visible.take(3) else visible, key = { it.key }) { book -> LibraryTile(book, covers, list && !home, !busy, book.open) }
+                if (!seriesView) items(if (home) visible.take(3) else visible, key = { it.key }) { book ->
+                    LibraryTile(book, covers, list && !home, !busy, book.open)
+                }
                 if (visible.isEmpty() && !seriesView && !busy && !loading && (!home || shows.isEmpty())) item(span = { GridItemSpan(maxLineSpan) }) {
                     if (filtering) Column {
                         Text(stringResource(R.string.shelf_no_results), color = MaterialTheme.colorScheme.onSurfaceVariant)

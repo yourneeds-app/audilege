@@ -33,33 +33,41 @@ internal fun shelfSeries(items: List<ShelfItem>): List<ShelfSeries> = items
     }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
 
 @Composable
-internal fun SeriesRow(series: List<ShelfSeries>, covers: CoverStore, enabled: Boolean, continuing: Boolean,
-    open: (String) -> Unit, seeAll: () -> Unit) {
+internal fun ContinueSeriesRow(series: List<ShelfSeries>, covers: CoverStore, enabled: Boolean, seeAll: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(if (continuing) R.string.home_continue_series else R.string.home_series),
+            Text(stringResource(R.string.home_continue_series),
                 Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.titleMedium)
-            if (continuing) TextButton(onClick = seeAll) { Text(stringResource(R.string.shelf_see_all)) }
+            TextButton(onClick = seeAll) { Text(stringResource(R.string.shelf_see_all)) }
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(series, key = { it.name }) { row ->
-                val next = row.next.takeIf { continuing }
-                val coverBooks = (listOfNotNull(next) + row.books).distinctBy { it.key }.take(3)
-                Surface(onClick = { if (next != null) (next.resume ?: next.open)() else open(row.name) }, enabled = enabled,
-                    shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainer) {
-                    Column(Modifier.width(142.dp).padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Box(Modifier.width(105.dp).height(103.dp)) {
-                            coverBooks.withIndex().reversed().forEach { (index, book) ->
-                                BookCover("", covers, book.key, book.cover,
-                                    Modifier.offset(x = (index * 12).dp, y = (index * 5).dp).size(70.dp, 92.dp))
-                            }
-                        }
-                        Text(row.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        if (next != null) Text(next.title, style = MaterialTheme.typography.bodySmall,
-                            maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    }
+                val next = row.next ?: return@items
+                SeriesTile(row, covers, enabled, Modifier.width(142.dp), next) { (next.resume ?: next.open)() }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun SeriesTile(series: ShelfSeries, covers: CoverStore, enabled: Boolean, modifier: Modifier = Modifier,
+    next: ShelfItem? = null, open: () -> Unit) {
+    val coverBooks = (listOfNotNull(next) + series.books).distinctBy { it.key }.take(3)
+    Surface(onClick = open, enabled = enabled, modifier = modifier,
+        shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainer) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            BoxWithConstraints(Modifier.fillMaxWidth().height(103.dp)) {
+                val step = minOf(12.dp, maxWidth / 8)
+                val coverWidth = minOf(70.dp, maxWidth - step * 2)
+                coverBooks.withIndex().reversed().forEach { (index, book) ->
+                    BookCover("", covers, book.key, book.cover,
+                        Modifier.offset(x = step * index, y = (index * 5).dp).size(coverWidth, 92.dp))
                 }
             }
+            Text(series.name, style = MaterialTheme.typography.titleSmall, minLines = if (next == null) 2 else 1,
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (next != null) Text(next.title, style = MaterialTheme.typography.bodySmall,
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }
