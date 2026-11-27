@@ -50,7 +50,7 @@ internal data class ShelfItem(val key: String, val title: String, val author: St
     val showKey: String = "", val showTitle: String = "", val series: String = "", val volume: String = "",
     val bookId: Long? = null, val companionId: Long? = null, val authorAction: (() -> Unit)? = null,
     val seriesAction: (() -> Unit)? = null, val narrator: String = "", val percent: Double = 0.0,
-    val played: Boolean = false, val narratorAction: (() -> Unit)? = null)
+    val played: Boolean = false, val narratorAction: (() -> Unit)? = null, val resume: (() -> Unit)? = null)
 
 internal data class QueueTitle(val id: Long, val title: String)
 
@@ -144,7 +144,7 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
     sort: Int, setSort: (Int) -> Unit, category: String, setCategory: (String) -> Unit,
     list: Boolean, setList: (Boolean) -> Unit, openMenu: () -> Unit, more: (() -> Unit)?, seeAll: () -> Unit,
     header: @Composable () -> Unit, empty: @Composable () -> Unit, query: String, setQuery: (String) -> Unit,
-    showKey: String, openPodcasts: (String) -> Unit, importEpub: () -> Unit,
+    showKey: String, openPodcasts: (String) -> Unit, browseSeries: (String) -> Unit, seeSeries: () -> Unit, importEpub: () -> Unit,
     facetAuthor: String, facetSeries: String, facetNarrator: String, clearFacet: () -> Unit,
     status: ShelfStatus, setStatus: (ShelfStatus) -> Unit, onRefresh: () -> Unit) {
     val canSearch = tab == ShelfTab.Home || tab == ShelfTab.Library
@@ -160,7 +160,7 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
         }
     }
     var sortMenu by remember { mutableStateOf(false) }
-    val choices = listOf(R.string.sort_new, R.string.sort_old, R.string.sort_az, R.string.sort_za, R.string.shelf_by_author, R.string.shelf_by_series)
+    val series = remember(items) { shelfSeries(items) }
     val grid = rememberLazyGridState()
     val shows = remember(items) {
         items.filter { it.category == "podcast" }.sortedByDescending { it.added }
@@ -169,6 +169,9 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
     val home = tab == ShelfTab.Home && query.isBlank() && !search
     val canFilter = tab == ShelfTab.Library || tab == ShelfTab.Discover
     val podcastView = canFilter && category == "podcast"
+    val seriesView = canFilter && category == "series"
+    val choices = if (podcastView) listOf(R.string.sort_new, R.string.sort_old, R.string.sort_az, R.string.sort_za, R.string.podcast_sort_show)
+        else listOf(R.string.sort_new, R.string.sort_old, R.string.sort_az, R.string.sort_za, R.string.shelf_by_author, R.string.shelf_by_series)
     val filtering = query.isNotBlank() || (canFilter && category.isNotEmpty()) ||
         (tab == ShelfTab.Library && status != ShelfStatus.All) ||
         facetAuthor.isNotBlank() || facetSeries.isNotBlank() || facetNarrator.isNotBlank()
@@ -196,8 +199,9 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
             0 -> compareByDescending<ShelfItem> { it.added }.then(alphabet)
             1 -> compareBy<ShelfItem> { it.added == null }.thenBy { it.added }.then(alphabet)
             3 -> alphabet.reversed()
-            4 -> compareBy<ShelfItem> { it.author.isBlank() }
-                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.author }.then(alphabet)
+            4 -> compareBy<ShelfItem> { (if (it.category == "podcast") it.showTitle.ifBlank { it.author } else it.author).isBlank() }
+                .thenBy(String.CASE_INSENSITIVE_ORDER) { if (it.category == "podcast") it.showTitle.ifBlank { it.author } else it.author }
+                .then(compareByDescending { if (it.category == "podcast") it.added else null }).then(alphabet)
             5 -> compareBy<ShelfItem> { it.series.isBlank() }
                 .thenBy(String.CASE_INSENSITIVE_ORDER) { it.series }
                 .thenBy { it.volume.replace(',', '.').toDoubleOrNull() ?: Double.MAX_VALUE }.then(alphabet)
@@ -211,7 +215,7 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
             if (tab == ShelfTab.Library) IconButton(onClick = importEpub, enabled = !busy) {
                 Icon(painterResource(R.drawable.menu_upload), stringResource(R.string.import_epub))
             }
-            if (!home) Box {
+            if (!home && !seriesView) Box {
                 TextButton(onClick = { sortMenu = true }) { Text(stringResource(R.string.shelf_sort)) }
                 DropdownMenu(sortMenu, { sortMenu = false }) {
                     choices.forEachIndexed { index, label -> DropdownMenuItem(text = { Text(stringResource(label)) },
@@ -259,15 +263,15 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                 if (canFilter && (category.isNotEmpty() || items.any { it.category.isNotEmpty() })) item(span = { GridItemSpan(maxLineSpan) }) {
                     val categories = listOf("" to R.string.shelf_all_media, "audilege" to R.string.app,
                         "ebook" to R.string.shelf_ebooks, "audio" to R.string.shelf_audio_category,
-                        "podcast" to R.string.shelf_podcasts).filter { (value, _) ->
-                        value.isEmpty() || value == category || items.any { it.category == value }
+                        "podcast" to R.string.shelf_podcasts, "series" to R.string.home_series).filter { (value, _) ->
+                        value.isEmpty() || value == category || (value == "series" && series.isNotEmpty()) || items.any { it.category == value }
                     }
                     BoxWithConstraints(Modifier.fillMaxWidth()) {
                         val minWidth = 98.dp * LocalDensity.current.fontScale
                         val columns = ((maxWidth + 8.dp) / (minWidth + 8.dp)).toInt().coerceAtLeast(1)
                         val rowSize = when {
                             categories.size <= columns -> categories.size
-                            columns >= 3 && categories.size == 5 -> 3
+                            columns >= 3 && categories.size in 5..6 -> 3
                             columns >= 2 -> 2
                             else -> 1
                         }
@@ -284,7 +288,7 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                         }
                     }
                 }
-                if (tab == ShelfTab.Library) item(span = { GridItemSpan(maxLineSpan) }) {
+                if (tab == ShelfTab.Library && !seriesView) item(span = { GridItemSpan(maxLineSpan) }) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(ShelfStatus.All to R.string.shelf_all_status,
                             ShelfStatus.Started to R.string.shelf_started,
@@ -299,6 +303,10 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                 }
                 if (home && recent.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
                     ContinueReading(recent, covers, !busy)
+                }
+                val seriesCards = if (home) series.filter { it.next != null }.take(6) else series
+                if ((home || seriesView) && seriesCards.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                    SeriesRow(seriesCards, covers, !busy, home, browseSeries, seeSeries)
                 }
                 if ((home || podcastView) && query.isBlank() && shows.isNotEmpty() && show == null)
                     item(span = { GridItemSpan(maxLineSpan) }) {
@@ -325,13 +333,13 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                                 items(shows, key = { it.key }) { episode ->
                                     Box(Modifier.width(106.dp)) {
                                         LibraryTile(episode.copy(title = episode.showTitle.ifBlank { episode.author },
-                                            author = "", caption = ""), covers, false, !busy) { openPodcasts(episode.showKey) }
+                                            author = "", caption = "", played = false, percent = 0.0), covers, false, !busy) { openPodcasts(episode.showKey) }
                                     }
                                 }
                             }
                         }
                     }
-                if (!home || visible.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                if (!seriesView && (!home || visible.isNotEmpty())) item(span = { GridItemSpan(maxLineSpan) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(if (podcastView) show?.showTitle ?: stringResource(R.string.shelf_episodes)
                             else stringResource(if (home) R.string.home_new else if (tab == ShelfTab.Downloads) R.string.local else R.string.shelf_mine),
@@ -342,7 +350,7 @@ internal fun ShelfContent(tab: ShelfTab, items: List<ShelfItem>, recent: List<Re
                     }
                 }
                 items(if (home) visible.take(3) else visible, key = { it.key }) { book -> LibraryTile(book, covers, list && !home, !busy, book.open) }
-                if (visible.isEmpty() && !busy && !loading && (!home || shows.isEmpty())) item(span = { GridItemSpan(maxLineSpan) }) {
+                if (visible.isEmpty() && !seriesView && !busy && !loading && (!home || shows.isEmpty())) item(span = { GridItemSpan(maxLineSpan) }) {
                     if (filtering) Column {
                         Text(stringResource(R.string.shelf_no_results), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         TextButton(onClick = {

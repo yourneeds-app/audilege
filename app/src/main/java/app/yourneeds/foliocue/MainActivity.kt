@@ -106,7 +106,7 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
     var facetSeries by rememberSaveable { mutableStateOf("") }
     var libraryCategory by rememberSaveable { mutableStateOf("") }
     var podcastShow by rememberSaveable { mutableStateOf("") }
-    var podcastOrder by rememberSaveable { mutableStateOf(display.getInt("podcast.order", 0)) }
+    var podcastOrder by rememberSaveable { mutableStateOf(display.getInt("podcast.order", 0).coerceIn(0, 4)) }
     var query by rememberSaveable { mutableStateOf("") }
     var list by rememberSaveable { mutableStateOf(display.getBoolean("shelf.list", false)) }
     var form by remember { mutableStateOf(false) }
@@ -437,10 +437,16 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                 narrator = entry.narrator, played = entry.played,
                 percent = entry.editionFileId?.let { edition ->
                     val key = keyOf(File(folder,keyOf("${entry.url}#$edition") + ".epub").absolutePath)
-                    if (readerPrefs.contains("$key.sync.pending") || entry.readingPercent == null)
-                        readerPrefs.getFloat("$key.shelfPercent",0f).toDouble() else entry.readingPercent
+                    val localPercent = readerPrefs.getFloat("$key.shelfPercent", 0f).toDouble()
+                    if (readerPrefs.contains("$key.sync.pending") || entry.readingPercent == null ||
+                        (entry.category == "podcast" && localPercent >= 100.0)) localPercent else entry.readingPercent
                 } ?: entry.readingPercent ?: 0.0,
-                narratorAction = entry.narrator.takeIf(String::isNotBlank)?.let { name -> { browseFacet(narrator = name) } })
+                narratorAction = entry.narrator.takeIf(String::isNotBlank)?.let { name -> { browseFacet(narrator = name) } },
+                resume = { showDetails(entry, entry.resumeMode ?: when (entry.category) {
+                    "audio" -> Mode.Listen
+                    "audilege" -> Mode.Follow
+                    else -> Mode.Read
+                }) })
         }
         val duplicateCopies = remember(current,library,catalog,storageRevision) {
             val remoteEntries = current?.page?.entries.orEmpty().filter { it.book }
@@ -591,6 +597,8 @@ private fun FolioCue(activity: MainActivity, playerRequest: Int) {
                                             podcastShow = ""
                                         }, list,
                                         showKey = podcastShow, openPodcasts = ::openPodcasts,
+                                        browseSeries = { browseFacet(series = it) },
+                                        seeSeries = { navigate(ShelfTab.Library); libraryCategory = "series" },
                                         setList = { list = it; display.edit().putBoolean("shelf.list",it).apply() },
                                         openMenu = menu, importEpub = ::startImport, more = more,seeAll = { libraryCategory = ""; navigate(ShelfTab.Library) },
                                         header = {

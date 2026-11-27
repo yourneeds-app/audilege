@@ -142,11 +142,11 @@ internal fun LibraryTile(item: ShelfItem, covers: CoverStore, list: Boolean, ena
     val artwork: @Composable (Modifier) -> Unit = { modifier ->
         Box(modifier) {
             BookCover(item.title, covers, item.key, item.cover, Modifier.matchParentSize(), crop = item.category == "podcast")
-            if (item.category != "podcast" && (item.played || item.percent >= 100.0)) {
+            if (item.played || item.percent >= 100.0) {
                 Surface(modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp).size(24.dp),
                     shape = CircleShape, color = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Check, stringResource(R.string.shelf_finished), Modifier.size(16.dp))
+                        Icon(Icons.Default.Check, stringResource(if (item.category == "podcast") R.string.podcast_played else R.string.shelf_finished), Modifier.size(16.dp))
                     }
                 }
             }

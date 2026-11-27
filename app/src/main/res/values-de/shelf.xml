@@ -24,6 +24,10 @@
     <string name="shelf_section">Abschnitt %1$d von %2$d</string>
     <string name="shelf_chapter">Kapitel %1$d</string>
     <string name="shelf_series">Reihe · %1$s</string>
+    <string name="home_series">Serien</string>
+    <string name="home_continue_series">Serie fortsetzen</string>
+    <string name="podcast_sort_show">Podcast A–Z</string>
+    <string name="podcast_played">Gehört</string>
     <string name="shelf_narrator">Gesprochen von %1$s</string>
     <string name="shelf_pages">%1$d Seiten</string>
     <string name="shelf_connect">Server verbinden</string>

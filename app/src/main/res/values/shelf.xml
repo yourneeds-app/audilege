@@ -24,6 +24,10 @@
     <string name="shelf_section">Section %1$d of %2$d</string>
     <string name="shelf_chapter">Chapter %1$d</string>
     <string name="shelf_series">Series · %1$s</string>
+    <string name="home_series">Series</string>
+    <string name="home_continue_series">Continue series</string>
+    <string name="podcast_sort_show">Podcast A–Z</string>
+    <string name="podcast_played">Played</string>
     <string name="shelf_narrator">Narrated by %1$s</string>
     <string name="shelf_pages">%1$d pages</string>
     <string name="shelf_connect">Connect a server</string>
